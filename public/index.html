@@ -62,6 +62,9 @@
           <span>🕵️</span> Central de Apuração (Gestor)
           <span id="badgeTotalOcorrencias" class="px-1.5 py-0.2 rounded-full text-xs bg-[var(--secondary)] text-[var(--secondary-foreground)]">0</span>
         </button>
+        <button onclick="switchTab('situacional')" id="tab-situacional" class="px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5">
+          <span>📊</span> Painel Situacional & Mapa de Calor
+        </button>
         <button onclick="switchTab('admin')" id="tab-admin" class="px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5">
           <span>📍</span> Admin: Locais do Contrato
         </button>
@@ -396,6 +399,80 @@
       </div>
 
       <div id="fullMatrixContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      </div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- TAB 5: PAINEL SITUACIONAL, MAPA DE CALOR E EXPORTAÇÃO DE LAUDOS   -->
+    <!-- ================================================================= -->
+    <div id="view-situacional" class="hidden space-y-5">
+      <!-- Top Action & Export Bar -->
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="text-sm font-bold">📊 Inteligência Situacional, Mapa de Calor por Local Fixo & Exportação</h2>
+          <p class="text-xs text-[var(--muted-foreground)]">
+            Agrupamento automático sem duplicidades graças aos Locais Fixos cadastrados pelo Administrador da Unidade.
+          </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button onclick="seedAllTestCases(); renderSituacionalDashboard();" class="px-3 py-2 rounded-lg border border-[var(--border)] hover:bg-[var(--secondary)] text-xs font-semibold">
+            🔄 Carregar Base Completa (7 Casos)
+          </button>
+          <button onclick="exportToCSVFile()" class="px-3.5 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:opacity-90 flex items-center gap-1.5 shadow">
+            <span>⬇️</span> Exportar Relatório Gerencial (.CSV)
+          </button>
+        </div>
+      </div>
+
+      <!-- Heatmap + Category Breakdown Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        <!-- Heatmap by Local Fixo -->
+        <div class="lg:col-span-6 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 space-y-3">
+          <div class="flex items-center justify-between border-b border-[var(--card-border)] pb-2.5">
+            <div>
+              <h3 class="text-sm font-bold">🔥 Mapa de Calor por Unidade & Local Fixo</h3>
+              <p class="text-xs text-[var(--muted-foreground)]">Ranking de concentração de incidentes e infrações confirmadas</p>
+            </div>
+            <span class="px-2 py-0.5 rounded text-xs font-mono bg-[var(--background)] border border-[var(--border)]" id="heatmapTotalLocaisBadge">0 locais</span>
+          </div>
+          <div id="situacionalHeatmapList" class="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+          </div>
+        </div>
+
+        <!-- Category Distribution (Toque 1: Nuclear vs Específico) -->
+        <div class="lg:col-span-6 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 space-y-3">
+          <div class="flex items-center justify-between border-b border-[var(--card-border)] pb-2.5">
+            <div>
+              <h3 class="text-sm font-bold">📈 Distribuição pelas 6 Categorias Nucleares (Toque 1)</h3>
+              <p class="text-xs text-[var(--muted-foreground)]">Proporção entre ocorrências <span class="text-sky-400 font-semibold">[Nuclear]</span> e <span class="text-amber-400 font-semibold">[Específico]</span></p>
+            </div>
+          </div>
+          <div id="situacionalCategoryChart" class="space-y-3">
+          </div>
+        </div>
+      </div>
+
+      <!-- Investigation Funnel & Audit Dossier Table -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        <div class="lg:col-span-5 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 space-y-3">
+          <h3 class="text-sm font-bold border-b border-[var(--card-border)] pb-2">⚖️ Funil de Apuração & Parecer Final</h3>
+          <div id="situacionalFunnelBox" class="space-y-2.5"></div>
+        </div>
+
+        <div class="lg:col-span-7 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 space-y-3">
+          <div class="flex items-center justify-between border-b border-[var(--card-border)] pb-2">
+            <h3 class="text-sm font-bold">📄 Emissão de Dossiê Individual de Auditoria (SHA-256)</h3>
+            <span class="text-xs text-[var(--muted-foreground)]">Clique em "Emitir Laudo" para visualizar/imprimir</span>
+          </div>
+          <div id="situacionalDossieList" class="divide-y divide-[var(--card-border)] max-h-72 overflow-y-auto"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL DE DOSSIÊ / LAUDO DE INVESTIGAÇÃO IMPRIMÍVEL -->
+    <div id="dossieModal" class="hidden fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4">
+      <div class="bg-[var(--card)] border-2 border-[var(--border)] rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div id="dossieModalContent"></div>
       </div>
     </div>
 
@@ -1150,9 +1227,10 @@
     // =========================================================================
     function switchTab(tab) {
       currentTab = tab;
-      ["mobile", "apuracao", "admin", "matriz"].forEach(t => {
+      ["mobile", "apuracao", "situacional", "admin", "matriz"].forEach(t => {
         const view = document.getElementById(`view-${t}`);
         const btn = document.getElementById(`tab-${t}`);
+        if (!view || !btn) return;
         if (t === tab) {
           view.classList.remove("hidden");
           btn.className = "px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 bg-[var(--primary)] text-[var(--primary-foreground)]";
@@ -1165,6 +1243,8 @@
       if (tab === "apuracao") {
         renderApuracaoTable();
         renderInvestigationPanel();
+      } else if (tab === "situacional") {
+        renderSituacionalDashboard();
       } else if (tab === "admin") {
         document.getElementById("adminSectorSelect").value = activeSectorId;
         renderAdminLocais();
@@ -1689,9 +1769,14 @@
 
           <div id="auditFeedbackMsg" class="hidden p-2.5 rounded-lg text-xs font-semibold"></div>
 
-          <button onclick="saveAuditChanges('${ocr.id}')" class="w-full py-2.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-bold hover:opacity-90">
-            💾 Salvar Status e Parecer da Apuração
-          </button>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button onclick="saveAuditChanges('${ocr.id}')" class="w-full py-2.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-bold hover:opacity-90">
+              💾 Salvar Status e Parecer
+            </button>
+            <button onclick="openDossieModal('${ocr.id}')" class="w-full py-2.5 rounded-lg border border-[var(--border)] bg-[var(--background)] hover:bg-[var(--secondary)] text-xs font-bold">
+              📄 Emitir Laudo / Dossiê
+            </button>
+          </div>
         </div>
       `;
     }
@@ -1841,6 +1926,252 @@
           </div>
         `;
       }).join("");
+    }
+
+    // =========================================================================
+    // 12. PAINEL SITUACIONAL, MAPA DE CALOR E EXPORTAÇÃO DE RELATÓRIOS / DOSSIÊ
+    // =========================================================================
+    function renderSituacionalDashboard() {
+      const total = ocorrenciasDB.length;
+
+      // 1. Agrupamento do Mapa de Calor por Local Fixo
+      const mapaLocais = {};
+      ocorrenciasDB.forEach(o => {
+        const key = `${o.setorId}::${o.localNome}`;
+        if (!mapaLocais[key]) {
+          mapaLocais[key] = {
+            setorId: o.setorId,
+            setorNome: o.setorNome,
+            localNome: o.localNome,
+            total: 0,
+            confirmadas: 0,
+            emAberto: 0
+          };
+        }
+        mapaLocais[key].total++;
+        if (o.apuracao.status === "Concluída" && o.apuracao.conclusaoFinal === "Infração Confirmada") {
+          mapaLocais[key].confirmadas++;
+        }
+        if (o.apuracao.status !== "Concluída") {
+          mapaLocais[key].emAberto++;
+        }
+      });
+
+      const heatmapArr = Object.values(mapaLocais).sort((a, b) => b.total - a.total || b.confirmadas - a.confirmadas);
+      const maxLocal = heatmapArr[0]?.total || 1;
+      document.getElementById("heatmapTotalLocaisBadge").textContent = `${heatmapArr.length} locais monitorados`;
+
+      const heatmapEl = document.getElementById("situacionalHeatmapList");
+      heatmapEl.innerHTML = heatmapArr.map(item => {
+        const pct = Math.max(18, Math.round((item.total / maxLocal) * 100));
+        const isCrit = item.total >= 2 || item.confirmadas >= 1;
+        const barColor = isCrit ? "bg-rose-500" : "bg-amber-500";
+        const badgeText = isCrit ? "CALOR ALTO / CRÍTICO" : "MONITORADO";
+        const badgeClass = isCrit
+          ? "bg-rose-500/15 text-rose-400 border-rose-500/30"
+          : "bg-amber-500/15 text-amber-400 border-amber-500/30";
+
+        return `
+          <div class="p-3 rounded-lg bg-[var(--background)] border border-[var(--card-border)] space-y-1.5">
+            <div class="flex items-center justify-between gap-2 text-xs">
+              <div>
+                <span class="font-bold">${item.localNome}</span>
+                <span class="text-[var(--muted-foreground)] block text-xs">${item.setorNome}</span>
+              </div>
+              <span class="px-2 py-0.5 rounded border text-xs font-semibold ${badgeClass}">${badgeText}</span>
+            </div>
+            <div class="w-full h-2 rounded-full bg-[var(--card)] overflow-hidden">
+              <div class="h-full ${barColor}" style="width: ${pct}%"></div>
+            </div>
+            <div class="flex items-center justify-between text-xs text-[var(--muted-foreground)]">
+              <span><strong>${item.total}</strong> ocorrência(s) no local</span>
+              <span><strong>${item.confirmadas}</strong> infração(ões) confirmada(s) • <strong>${item.emAberto}</strong> em aberto</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      // 2. Gráfico por Categoria Nuclear (Toque 1)
+      const catChartEl = document.getElementById("situacionalCategoryChart");
+      catChartEl.innerHTML = CATEGORIAS_NUCLEARES.map(cat => {
+        const matches = ocorrenciasDB.filter(o => Number(o.categoriaId) === cat.id);
+        const nucCount = matches.filter(o => o.origemOpcao === "NUCLEAR").length;
+        const espCount = matches.filter(o => o.origemOpcao === "ESPECIFICO").length;
+        const pct = total > 0 ? Math.round((matches.length / total) * 100) : 0;
+
+        return `
+          <div class="space-y-1">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-semibold">${cat.icone} ${cat.nome}</span>
+              <span class="font-mono text-xs"><strong>${matches.length}</strong> (${pct}%) • <span class="text-sky-400">${nucCount} Nuc</span> / <span class="text-amber-400">${espCount} Esp</span></span>
+            </div>
+            <div class="w-full h-2.5 rounded-full bg-[var(--background)] border border-[var(--border)] overflow-hidden flex">
+              <div class="h-full bg-sky-500" style="width: ${total > 0 ? (nucCount / total) * 100 : 0}%"></div>
+              <div class="h-full bg-amber-500" style="width: ${total > 0 ? (espCount / total) * 100 : 0}%"></div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      // 3. Funil de Apuração & Parecer Final
+      const statuses = ["Não Iniciada", "Em Apuração", "Interrompida", "Concluída"];
+      const concluidasList = ocorrenciasDB.filter(o => o.apuracao.status === "Concluída");
+      const confirmadas = concluidasList.filter(o => o.apuracao.conclusaoFinal === "Infração Confirmada").length;
+      const naoConfirmadas = concluidasList.filter(o => o.apuracao.conclusaoFinal === "Infração não Confirmada").length;
+      const semConclusao = concluidasList.filter(o => o.apuracao.conclusaoFinal === "Sem Conclusão").length;
+
+      document.getElementById("situacionalFunnelBox").innerHTML = `
+        <div class="grid grid-cols-2 gap-2">
+          ${statuses.map(st => {
+            const cnt = ocorrenciasDB.filter(o => o.apuracao.status === st).length;
+            return `
+              <div class="p-2.5 rounded-lg bg-[var(--background)] border border-[var(--card-border)] flex items-center justify-between text-xs">
+                <span>${st}</span>
+                <span class="font-bold font-mono text-sm">${cnt}</span>
+              </div>
+            `;
+          }).join("")}
+        </div>
+        <div class="p-3 rounded-lg bg-[var(--background)] border border-[var(--card-border)] space-y-1.5 text-xs">
+          <div class="font-bold">Parecer das Ocorrências Concluídas (${concluidasList.length})</div>
+          <div class="flex items-center justify-between"><span>✓ Infração Confirmada:</span><strong class="text-emerald-400">${confirmadas}</strong></div>
+          <div class="flex items-center justify-between"><span>○ Infração não Confirmada:</span><strong>${naoConfirmadas}</strong></div>
+          <div class="flex items-center justify-between"><span>? Sem Conclusão:</span><strong>${semConclusao}</strong></div>
+        </div>
+      `;
+
+      // 4. Lista de Emissão de Dossiê Individual
+      document.getElementById("situacionalDossieList").innerHTML = ocorrenciasDB.map(o => `
+        <div class="py-2.5 px-2 flex items-center justify-between gap-2 text-xs">
+          <div>
+            <div class="font-bold font-mono">${o.protocolo} • <span class="font-sans">${o.localNome}</span></div>
+            <div class="text-[var(--muted-foreground)] truncate max-w-md">${o.opcaoEspecifica}</div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            ${getStatusBadgeHtml(o.apuracao.status)}
+            <button onclick="openDossieModal('${o.id}')" class="px-2.5 py-1 rounded bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold text-xs hover:opacity-90">
+              📄 Emitir Laudo
+            </button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function exportToCSVFile() {
+      const headers = [
+        "Protocolo",
+        "Data_Hora_Fato",
+        "Setor",
+        "Local_Fixo_Admin",
+        "Categoria_Nuclear_Toque1",
+        "Origem_Toque2",
+        "Opcao_Tipificada_Toque2",
+        "Status_Apuracao",
+        "Conclusao_Final_Apuracao",
+        "Descricao_Agente",
+        "Acoes_Tomadas",
+        "Conclusao_Agente",
+        "Analise_Investigador",
+        "Hash_Integridade_SHA256"
+      ];
+      const esc = (v) => `"${String(v ?? "").replace(/\r?\n/g, " ").replace(/"/g, '""')}"`;
+      const rows = ocorrenciasDB.map(o => [
+        o.protocolo,
+        o.dataHoraFato,
+        o.setorNome,
+        o.localNome,
+        o.categoriaNuclear,
+        o.origemOpcao,
+        o.opcaoEspecifica,
+        o.apuracao.status,
+        o.apuracao.conclusaoFinal || "",
+        o.descricao,
+        o.acoesTomadas,
+        o.conclusaoAgente || "",
+        o.apuracao.analiseTexto || "",
+        o.hashIntegridade
+      ].map(esc).join(","));
+
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `FIIO_Relatorio_Apuracao_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function openDossieModal(id) {
+      const ocr = ocorrenciasDB.find(o => o.id === id);
+      if (!ocr) return;
+      const modal = document.getElementById("dossieModal");
+      const content = document.getElementById("dossieModalContent");
+
+      content.innerHTML = `
+        <div class="flex items-start justify-between border-b border-[var(--card-border)] pb-3">
+          <div>
+            <span class="px-2 py-0.5 rounded text-xs font-bold bg-[var(--primary)] text-[var(--primary-foreground)]">FIIO • DOSSIÊ AUDITÁVEL</span>
+            <h2 class="text-base font-bold mt-1">Laudo de Investigação de Ocorrência • ${ocr.protocolo}</h2>
+            <p class="text-xs text-[var(--muted-foreground)]">Fluxo Integrado de Investigação de Ocorrências</p>
+          </div>
+          <button onclick="closeDossieModal()" class="px-2.5 py-1 rounded border border-[var(--border)] text-xs font-bold">✕ Fechar</button>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-[var(--background)] p-3.5 rounded-xl border border-[var(--card-border)]">
+          <div><strong class="text-[var(--muted-foreground)] block">Setor Operacional:</strong> ${ocr.setorNome}</div>
+          <div><strong class="text-[var(--muted-foreground)] block">Local Homologado (Admin):</strong> ${ocr.localNome}</div>
+          <div><strong class="text-[var(--muted-foreground)] block">Data/Hora do Fato:</strong> ${ocr.dataHoraFato}</div>
+          <div><strong class="text-[var(--muted-foreground)] block">Coordenadas GPS:</strong> <span class="font-mono">${ocr.gps}</span></div>
+          <div class="sm:col-span-2"><strong class="text-[var(--muted-foreground)] block">Toque 1 (Categoria Nuclear):</strong> ${ocr.categoriaNuclear}</div>
+          <div class="sm:col-span-2"><strong class="text-[var(--muted-foreground)] block">Toque 2 (Tipificação):</strong> [${ocr.origemOpcao}] ${ocr.opcaoEspecifica}</div>
+        </div>
+
+        <div class="space-y-2.5 text-xs">
+          <div class="p-3 rounded-lg bg-[var(--background)] border border-[var(--card-border)]">
+            <strong class="text-[var(--muted-foreground)] block mb-1">1. Relato Descritivo do Agente em Campo:</strong>
+            <p>${ocr.descricao}</p>
+          </div>
+          <div class="p-3 rounded-lg bg-[var(--background)] border border-[var(--card-border)]">
+            <strong class="text-[var(--muted-foreground)] block mb-1">2. Ações Tomadas Imediatas:</strong>
+            <p>${ocr.acoesTomadas}</p>
+          </div>
+          <div class="p-3 rounded-lg bg-[var(--background)] border border-[var(--card-border)]">
+            <strong class="text-[var(--muted-foreground)] block mb-1">3. Conclusão Preliminar do Agente:</strong>
+            <p>${ocr.conclusaoAgente || "-"}</p>
+          </div>
+          <div class="p-3 rounded-lg bg-[var(--background)] border border-[var(--card-border)] space-y-1">
+            <div class="flex items-center justify-between">
+              <strong class="text-[var(--muted-foreground)]">4. Parecer da Equipe de Apuração:</strong>
+              ${getStatusBadgeHtml(ocr.apuracao.status)}
+            </div>
+            <p class="mt-1"><strong>Análise Investigativa:</strong> ${ocr.apuracao.analiseTexto || "(Aguardando preenchimento pela equipe de investigação)"}</p>
+            <p><strong>Conclusão Final:</strong> <span class="font-bold">${ocr.apuracao.conclusaoFinal || "Pendente de encerramento"}</span></p>
+          </div>
+        </div>
+
+        <div class="p-3 rounded-xl bg-[var(--background)] border border-[var(--border)] text-xs space-y-1">
+          <div class="font-bold">🔐 Assinatura Criptográfica de Integridade (SHA-256)</div>
+          <code class="block font-mono text-xs break-all text-[var(--code-foreground)]">${ocr.hashIntegridade}</code>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2">
+          <button onclick="window.print()" class="px-4 py-2 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-bold hover:opacity-90">
+            🖨️ Imprimir / Salvar em PDF
+          </button>
+          <button onclick="closeDossieModal()" class="px-4 py-2 rounded-lg border border-[var(--border)] text-xs font-semibold">
+            Fechar
+          </button>
+        </div>
+      `;
+
+      modal.classList.remove("hidden");
+    }
+
+    function closeDossieModal() {
+      document.getElementById("dossieModal").classList.add("hidden");
     }
 
     // Boot

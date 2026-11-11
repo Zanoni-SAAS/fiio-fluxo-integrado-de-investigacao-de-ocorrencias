@@ -114,3 +114,72 @@ test("6. Fila Offline-First e geração de Hash SHA-256 de 64 caracteres", () =>
   assert.equal(queue.pendingQueue.length, 0);
   assert.equal(queue.syncedDatabase.length, 1);
 });
+
+test("7. Painel Situacional & Mapa de Calor agrupa locais fixos e calcula taxa de confirmação", async () => {
+  const { computeSituationalMetrics, exportOcorrenciasToCSV } = await import("../src/analytics/situationalEngine.mjs");
+
+  const mockOcorrencias = [
+    {
+      protocolo: "FIIO-2026-1001",
+      dataHoraFato: "2026-11-11 08:00",
+      setorId: 3,
+      setorNome: "3. Setor Industrial",
+      localNome: "Estação de Tratamento (ETA/ETE)",
+      categoriaId: 5,
+      categoriaNuclear: "5. Infraestrutura, Emergências e Tráfego",
+      origemOpcao: "NUCLEAR",
+      opcaoEspecifica: "Problemas com equipamentos de segurança ou combate a incêndio (CFTV, controle de acesso, alarme, extintores)",
+      descricao: "Extintor vencido",
+      acoesTomadas: "Sinalizado ao SESMT",
+      conclusaoAgente: "Substituição solicitada",
+      hashIntegridade: "a".repeat(64),
+      apuracao: { status: "Concluída", conclusaoFinal: "Infração Confirmada", analiseTexto: "Troca realizada" }
+    },
+    {
+      protocolo: "FIIO-2026-1002",
+      dataHoraFato: "2026-11-11 08:30",
+      setorId: 3,
+      setorNome: "3. Setor Industrial",
+      localNome: "Estação de Tratamento (ETA/ETE)",
+      categoriaId: 4,
+      categoriaNuclear: "4. Inconformidades Procedimentais e Operacionais",
+      origemOpcao: "ESPECIFICO",
+      opcaoEspecifica: "Ausência ou uso incorreto de EPI/EPC obrigatório",
+      descricao: "Operador sem óculos de proteção",
+      acoesTomadas: "Orientação imediata",
+      conclusaoAgente: "EPI colocado",
+      hashIntegridade: "b".repeat(64),
+      apuracao: { status: "Concluída", conclusaoFinal: "Infração Confirmada", analiseTexto: "Confirmado no CFTV" }
+    },
+    {
+      protocolo: "FIIO-2026-1003",
+      dataHoraFato: "2026-11-11 09:00",
+      setorId: 4,
+      setorNome: "4. Setor Tecnológico",
+      localNome: "Sala Cofre Principal - Hall A",
+      categoriaId: 4,
+      categoriaNuclear: "4. Inconformidades Procedimentais e Operacionais",
+      origemOpcao: "NUCLEAR",
+      opcaoEspecifica: "Descumprimento de norma interna / Procedimento padrão",
+      descricao: "Limpeza úmida próxima ao rack",
+      acoesTomadas: "Interrompida limpeza",
+      conclusaoAgente: "Sem danos",
+      hashIntegridade: "c".repeat(64),
+      apuracao: { status: "Em Apuração", conclusaoFinal: null, analiseTexto: "Em análise" }
+    }
+  ];
+
+  const metrics = computeSituationalMetrics(mockOcorrencias);
+  assert.equal(metrics.total, 3);
+  assert.equal(metrics.porStatus["Concluída"], 2);
+  assert.equal(metrics.porStatus["Em Apuração"], 1);
+  assert.equal(metrics.taxaConfirmacaoPct, 100);
+  assert.equal(metrics.heatmapLocais[0].localNome, "Estação de Tratamento (ETA/ETE)");
+  assert.equal(metrics.heatmapLocais[0].total, 2);
+
+  const csv = exportOcorrenciasToCSV(mockOcorrencias);
+  assert.ok(csv.includes("Protocolo,Data_Hora_Fato,Setor,Local_Fixo_Admin"));
+  assert.ok(csv.includes("FIIO-2026-1001"));
+  assert.ok(csv.includes("Infração Confirmada"));
+});
+
