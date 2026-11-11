@@ -1,0 +1,18 @@
+{
+  "name": "sentinela-ocorrencias-patrimoniais",
+  "version": "1.0.0",
+  "description": "Sistema de Registro de Ocorrências Patrimoniais (PWA Offline-First) e Central de Apuração Multi-Contrato / Multi-Unidade (14 Setores x 6 Categorias)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/domain.test.mjs",
+    "generate:seed": "node scripts/generate-sql-seed.mjs"
+  },
+  "keywords": [
+    "seguranca-patrimonial",
+    "pwa",
+    "offline-first",
+    "postgresql",
+    "supabase"
+  ],
+  "license": "MIT"
+}

@@ -1,0 +1,1850 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sistema de Ocorrências & Apuração Patrimonial — Protótipo Interativo</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+</head>
+<body class="bg-[var(--background)] text-[var(--foreground)] antialiased p-4 md:p-6 m-0">
+
+  <!-- TOP HEADER & GLOBAL CONTROLS -->
+  <div class="max-w-7xl mx-auto space-y-5">
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 shadow-sm">
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 text-xs font-semibold rounded bg-[var(--primary)] text-[var(--primary-foreground)]">PWA + Web Admin</span>
+            <h1 class="text-lg font-bold tracking-tight">Gestão de Ocorrências & Apuração Patrimonial</h1>
+          </div>
+          <p class="text-xs text-[var(--muted-foreground)] mt-1">
+            Arquitetura em Cascata (Toque 1: 6 Categorias • Toque 2: 22 Nucleares Fixas + Específicas dos 14 Setores)
+          </p>
+        </div>
+
+        <!-- Global Contract -> Unit -> Sector Selector & Offline Simulator -->
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="flex flex-col">
+            <label class="text-xs text-[var(--muted-foreground)] font-medium mb-1">Cliente Multi-Unidade (Exemplo Real)</label>
+            <select id="multiUnitPresetSelect" onchange="if(this.value) handleSectorChange(this.value)" class="bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs font-medium focus:outline-none">
+              <option value="">-- Alternar Unidade de Cliente --</option>
+              <option value="2">🏢 Sabesp • Sede Pinheiros (Setor 2 - Administrativo)</option>
+              <option value="3">🏭 Sabesp • ETA Guaraú (Setor 3 - Industrial)</option>
+              <option value="8">⛏️ Holding Brasil • Pedreira Serra Sul (Setor 8 - Extrativista)</option>
+              <option value="7">🐄 Holding Brasil • Fazenda Boa Vista (Setor 7 - Agropecuarista)</option>
+              <option value="4">🖥️ Grupo Tech • Data Center Barueri (Setor 4 - Tecnológico)</option>
+              <option value="13">🚆 ViaTrilhos • Linha 1 Metrô (Setor 13 - Rodoferroviário)</option>
+            </select>
+          </div>
+
+          <div class="flex flex-col">
+            <label class="text-xs text-[var(--muted-foreground)] font-medium mb-1">Setor da Unidade (`setor_id` - 1 a 14)</label>
+            <select id="globalSectorSelect" onchange="handleSectorChange(this.value)" class="bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs font-medium focus:outline-none">
+            </select>
+          </div>
+
+          <div class="flex flex-col">
+            <label class="text-xs text-[var(--muted-foreground)] font-medium mb-1">Rede do Dispositivo (Dexie.js)</label>
+            <button id="networkToggleBtn" onclick="toggleNetworkMode()" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs font-semibold transition">
+              <span id="networkDot" class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+              <span id="networkLabel">ONLINE (Sincronizado)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <div class="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-[var(--card-border)]">
+        <button onclick="switchTab('mobile')" id="tab-mobile" class="px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5">
+          <span>📱</span> App do Vigilante (Mobile 3 Passos)
+        </button>
+        <button onclick="switchTab('apuracao')" id="tab-apuracao" class="px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5">
+          <span>🕵️</span> Central de Apuração (Gestor)
+          <span id="badgeTotalOcorrencias" class="px-1.5 py-0.2 rounded-full text-xs bg-[var(--secondary)] text-[var(--secondary-foreground)]">0</span>
+        </button>
+        <button onclick="switchTab('admin')" id="tab-admin" class="px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5">
+          <span>📍</span> Admin: Locais do Contrato
+        </button>
+        <button onclick="switchTab('matriz')" id="tab-matriz" class="px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5">
+          <span>🗂️</span> Matriz Completa (14 Setores × 6 Categorias)
+        </button>
+      </div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- TAB 1: MOBILE DO VIGILANTE (PWA OFFLINE-FIRST)                    -->
+    <!-- ================================================================= -->
+    <div id="view-mobile" class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      
+      <!-- Smartphone Frame Simulator -->
+      <div class="lg:col-span-7 bg-[var(--card)] border-2 border-[var(--border)] rounded-2xl overflow-hidden shadow-md">
+        <!-- Mobile Status Bar -->
+        <div class="bg-[var(--sidebar)] px-4 py-2.5 border-b border-[var(--card-border)] flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2">
+            <span class="font-bold">🛡️ Sentinela PWA</span>
+            <span id="mobileSectorBadge" class="px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] text-xs truncate max-w-[200px]"></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="mobileSyncBadge" class="px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/15 text-emerald-500">● Online</span>
+          </div>
+        </div>
+
+        <!-- Offline Queue Banner (Visible when there are pending offline items) -->
+        <div id="offlineQueueBanner" class="hidden bg-amber-500/15 border-b border-amber-500/30 px-4 py-2.5 flex items-center justify-between">
+          <div class="text-xs">
+            <span class="font-bold text-amber-500">⚡ Fila Offline (Dexie.js):</span>
+            <span id="offlineCountText" class="ml-1">0 registro(s) aguardando sinal</span>
+          </div>
+          <button onclick="syncOfflineQueue()" class="px-2.5 py-1 rounded bg-amber-500 text-black font-semibold text-xs hover:opacity-90">
+            Sincronizar Agora
+          </button>
+        </div>
+
+        <!-- Step Progress Header -->
+        <div class="px-5 pt-4 pb-3 border-b border-[var(--card-border)] bg-[var(--background)]">
+          <div class="flex items-center justify-between text-xs font-semibold mb-2">
+            <button onclick="goToStep(1)" id="stepBtn1" class="flex items-center gap-1.5 text-left">
+              <span id="stepCircle1" class="w-5 h-5 rounded-full flex items-center justify-center text-xs">1</span>
+              <span>1. Local & Data</span>
+            </button>
+            <div class="h-px flex-1 bg-[var(--border)] mx-2"></div>
+            <button onclick="goToStep(2)" id="stepBtn2" class="flex items-center gap-1.5 text-left">
+              <span id="stepCircle2" class="w-5 h-5 rounded-full flex items-center justify-center text-xs">2</span>
+              <span>2. Taxonomia & Relato</span>
+            </button>
+            <div class="h-px flex-1 bg-[var(--border)] mx-2"></div>
+            <button onclick="goToStep(3)" id="stepBtn3" class="flex items-center gap-1.5 text-left">
+              <span id="stepCircle3" class="w-5 h-5 rounded-full flex items-center justify-center text-xs">3</span>
+              <span>3. Fotos & Hash</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Form Body -->
+        <div class="p-5 space-y-4">
+
+          <!-- STEP 1: LOCAL & DATA/HORA -->
+          <div id="mobile-step-1" class="space-y-4">
+            <div class="p-3 rounded-lg bg-[var(--background)] border border-[var(--card-border)] flex items-center justify-between text-xs">
+              <div>
+                <span class="text-[var(--muted-foreground)] block">Agente Autenticado (PIN/Biometria)</span>
+                <span class="font-semibold">Vigilante Carlos Eduardo • Matrícula #4829</span>
+              </div>
+              <span class="font-mono text-xs text-[var(--muted-foreground)]" id="gpsPreview">GPS: -23.5505, -46.6333</span>
+            </div>
+
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label class="text-xs font-semibold">Local da Ocorrência (Lista Fixa do Administrador) *</label>
+                <button onclick="switchTab('admin')" class="text-xs text-[var(--link)] underline">+ Gerenciar Locais</button>
+              </div>
+              <select id="formLocalSelect" class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg px-3 py-2.5 text-xs font-medium">
+              </select>
+              <p class="text-xs text-[var(--muted-foreground)] mt-1">
+                Lista controlada pelo Administrador do contrato para evitar erros de digitação e agrupar o Mapa de Calor.
+              </p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs font-semibold block mb-1">Data e Hora do Fato *</label>
+                <input type="datetime-local" id="formDataHora" class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg px-3 py-2 text-xs" />
+              </div>
+              <div>
+                <label class="text-xs font-semibold block mb-1">Coordenadas GPS (Captura Automática)</label>
+                <input type="text" id="formGpsInput" readonly value="-23.550520, -46.633308" class="w-full bg-[var(--background)] text-[var(--muted-foreground)] border border-[var(--border)] rounded-lg px-3 py-2 text-xs font-mono" />
+              </div>
+            </div>
+
+            <div class="pt-2 flex justify-end">
+              <button onclick="goToStep(2)" class="px-4 py-2.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-semibold hover:opacity-90">
+                Avançar para Classificação (Toque 1 e 2) ➔
+              </button>
+            </div>
+          </div>
+
+          <!-- STEP 2: CASCATA (TOQUE 1 -> TOQUE 2) + CAMPOS DE TEXTO -->
+          <div id="mobile-step-2" class="hidden space-y-4">
+            <div>
+              <label class="text-xs font-semibold block mb-1.5">Toque 1: Selecione a Categoria Nuclear *</label>
+              <div id="categoryButtonsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              </div>
+            </div>
+
+            <div id="toque2Container" class="space-y-2 pt-2 border-t border-[var(--card-border)]">
+              <div class="flex items-center justify-between">
+                <label class="text-xs font-semibold">Toque 2: Selecione a Ocorrência (Nuclear ou Específica do Setor) *</label>
+                <span id="toque2CountBadge" class="text-xs text-[var(--muted-foreground)]"></span>
+              </div>
+              <div id="optionsListContainer" class="max-h-60 overflow-y-auto space-y-1.5 pr-1">
+              </div>
+            </div>
+
+            <!-- Free Text Fields defined in the conversation -->
+            <div class="space-y-3 pt-2 border-t border-[var(--card-border)]">
+              <div>
+                <label class="text-xs font-semibold block mb-1">Descrição Detalhada do Fato (Texto Livre) *</label>
+                <textarea id="formDescricao" rows="3" placeholder="Relate de forma objetiva o que foi constatado no local, envolvidos e circunstâncias..." class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg p-2.5 text-xs"></textarea>
+              </div>
+              <div>
+                <label class="text-xs font-semibold block mb-1">Ações Tomadas Imediatas (Texto Livre) *</label>
+                <textarea id="formAcoesTomadas" rows="2" placeholder="Ex: Isolamento da área, acionamento do supervisor, retenção preventiva, orientação..." class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg p-2.5 text-xs"></textarea>
+              </div>
+              <div>
+                <label class="text-xs font-semibold block mb-1">Conclusão Preliminar do Agente (Texto Livre / Opcional)</label>
+                <input type="text" id="formConclusaoAgente" placeholder="Ex: Situação normalizada no local; encaminhado para análise do CFTV." class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg px-3 py-2 text-xs" />
+              </div>
+            </div>
+
+            <div class="pt-2 flex items-center justify-between">
+              <button onclick="goToStep(1)" class="px-3 py-2 rounded-lg border border-[var(--border)] text-xs font-semibold">
+                ← Voltar
+              </button>
+              <button onclick="goToStep(3)" class="px-4 py-2.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-semibold hover:opacity-90">
+                Avançar para Fotos & Assinatura ➔
+              </button>
+            </div>
+          </div>
+
+          <!-- STEP 3: EVIDÊNCIAS & HASH DE INTEGRIDADE -->
+          <div id="mobile-step-3" class="hidden space-y-4">
+            <div>
+              <label class="text-xs font-semibold block mb-1.5">Anexar Evidências Fotográficas / Documentais</label>
+              <div class="grid grid-cols-3 gap-2">
+                <button type="button" onclick="addSimulatedEvidence('FOTO_LOCAL')" class="p-2.5 rounded-lg border border-dashed border-[var(--border)] hover:border-[var(--primary)] text-xs text-center space-y-1">
+                  <div class="text-base">📷</div>
+                  <div class="font-medium">+ Foto do Local</div>
+                </button>
+                <button type="button" onclick="addSimulatedEvidence('FOTO_DOCUMENTO')" class="p-2.5 rounded-lg border border-dashed border-[var(--border)] hover:border-[var(--primary)] text-xs text-center space-y-1">
+                  <div class="text-base">🪪</div>
+                  <div class="font-medium">+ Documento/NF</div>
+                </button>
+                <button type="button" onclick="addSimulatedEvidence('BOLETIM_POLICIAL')" class="p-2.5 rounded-lg border border-dashed border-[var(--border)] hover:border-[var(--primary)] text-xs text-center space-y-1">
+                  <div class="text-base">📄</div>
+                  <div class="font-medium">+ B.O. / Laudo</div>
+                </button>
+              </div>
+              <div id="evidenceListPreview" class="mt-2 space-y-1.5"></div>
+            </div>
+
+            <!-- Summary & Cryptographic Integrity Preview -->
+            <div class="p-3.5 rounded-xl bg-[var(--background)] border border-[var(--card-border)] space-y-2 text-xs">
+              <div class="font-bold flex items-center justify-between">
+                <span>🔐 Resumo & Hash de Auditoria (SHA-256)</span>
+                <span id="summaryOriginBadge" class="px-2 py-0.5 rounded text-xs"></span>
+              </div>
+              <div class="grid grid-cols-1 gap-1 text-[var(--muted-foreground)]">
+                <div><strong class="text-[var(--foreground)]">Setor:</strong> <span id="sumSetor"></span></div>
+                <div><strong class="text-[var(--foreground)]">Local:</strong> <span id="sumLocal"></span></div>
+                <div><strong class="text-[var(--foreground)]">Toque 1 (Categoria):</strong> <span id="sumCat"></span></div>
+                <div><strong class="text-[var(--foreground)]">Toque 2 (Ocorrência):</strong> <span id="sumOpt"></span></div>
+              </div>
+              <div class="pt-1.5 border-t border-[var(--card-border)]">
+                <span class="text-[var(--muted-foreground)] block mb-0.5">Hash SHA-256 calculado no dispositivo:</span>
+                <code id="sumHash" class="block font-mono text-xs break-all text-[var(--code-foreground)] bg-[var(--card)] p-1.5 rounded border border-[var(--border)]"></code>
+              </div>
+            </div>
+
+            <div class="pt-2 flex items-center justify-between">
+              <button onclick="goToStep(2)" class="px-3 py-2 rounded-lg border border-[var(--border)] text-xs font-semibold">
+                ← Voltar
+              </button>
+              <button onclick="submitOcorrencia()" class="px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:opacity-95 shadow">
+                ✓ Finalizar e Registrar Ocorrência
+              </button>
+            </div>
+          </div>
+
+          <!-- Feedback Toast inside Mobile -->
+          <div id="mobileFeedback" class="hidden p-3 rounded-lg text-xs font-medium"></div>
+        </div>
+      </div>
+
+      <!-- Right Column: Quick Test Scenarios from the Conversation -->
+      <div class="lg:col-span-5 space-y-4">
+        <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-bold">🧪 Casos de Teste da Conversa (Simulador Rápido)</h2>
+            <span class="text-xs text-[var(--muted-foreground)]">1 clique preenche o App</span>
+          </div>
+          <p class="text-xs text-[var(--muted-foreground)]">
+            Clique em qualquer um dos 6 cenários reais que você testou na conversa para carregar automaticamente o Setor, Local, Toque 1 (Categoria) e Toque 2 (Opção Nuclear ou Específica) no celular ao lado:
+          </p>
+          <div id="testScenariosList" class="space-y-2">
+          </div>
+        </div>
+
+        <!-- Architecture Audit Highlights Card -->
+        <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 space-y-2.5 text-xs">
+          <h3 class="text-sm font-bold">🔍 Ajustes Arquiteturais Aplicados neste Protótipo</h3>
+          <ul class="space-y-1.5 text-[var(--muted-foreground)] list-disc pl-4">
+            <li><strong class="text-[var(--foreground)]">Tabela <code class="font-mono">tipos_ocorrencia</code> real:</strong> Separação explícita entre os <strong>22 itens <code class="font-mono">[Nuclear]</code></strong> (<code class="font-mono">is_global = true</code>) e os <strong>102 itens <code class="font-mono">[Específico]</code></strong> filtrados por <code class="font-mono">setor_id</code>.</li>
+            <li><strong class="text-[var(--foreground)]">Extintores / Combate a Incêndio:</strong> Incorporado o refinamento na Categoria 5 para <em>"Problemas com equipamentos de segurança ou combate a incêndio (CFTV, controle de acesso, alarme, extintores)"</em>.</li>
+            <li><strong class="text-[var(--foreground)]">Campos de Texto Livre:</strong> Mantidos <em>Descrição</em>, <em>Ações Tomadas</em> e <em>Conclusão do Agente</em> em texto livre conforme sua decisão.</li>
+            <li><strong class="text-[var(--foreground)]">4 Status de Apuração:</strong> <em>Não Iniciada</em>, <em>Em Apuração</em>, <em>Interrompida</em> e <em>Concluída</em> (que exige obrigatoriamente a <em>Conclusão Final</em>).</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- TAB 2: CENTRAL DE APURAÇÃO (PAINEL WEB DO GESTOR/AUDITOR)         -->
+    <!-- ================================================================= -->
+    <div id="view-apuracao" class="hidden space-y-5">
+      <!-- KPI Row -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3" id="kpiGrid">
+      </div>
+
+      <!-- Filters & Actions Bar -->
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-3">
+          <div>
+            <label class="text-xs text-[var(--muted-foreground)] block mb-1">Filtrar por Status de Apuração</label>
+            <select id="filterStatus" onchange="renderApuracaoTable()" class="bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs">
+              <option value="ALL">Todos os Status</option>
+              <option value="Não Iniciada">Não Iniciada</option>
+              <option value="Em Apuração">Em Apuração</option>
+              <option value="Interrompida">Interrompida</option>
+              <option value="Concluída">Concluída</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-[var(--muted-foreground)] block mb-1">Filtrar por Setor</label>
+            <select id="filterSetor" onchange="renderApuracaoTable()" class="bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs">
+              <option value="ALL">Todos os 14 Setores</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-[var(--muted-foreground)] block mb-1">Origem da Opção</label>
+            <select id="filterOrigem" onchange="renderApuracaoTable()" class="bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs">
+              <option value="ALL">Todas ([Nuclear] + [Específico])</option>
+              <option value="NUCLEAR">Apenas [Nuclear] (Global)</option>
+              <option value="ESPECIFICO">Apenas [Específico] (Setorial)</option>
+            </select>
+          </div>
+        </div>
+
+        <button onclick="seedAllTestCases()" class="px-3 py-2 rounded-lg border border-[var(--border)] hover:bg-[var(--secondary)] text-xs font-semibold">
+          + Carregar Todos os Casos da Conversa na Fila
+        </button>
+      </div>
+
+      <!-- Main Master-Detail Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        <!-- Table of Occurrences -->
+        <div class="lg:col-span-7 bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden">
+          <div class="px-4 py-3 border-b border-[var(--card-border)] flex items-center justify-between">
+            <h3 class="text-sm font-bold">Fila de Ocorrências & Investigação</h3>
+            <span class="text-xs text-[var(--muted-foreground)]">Clique em uma linha para auditar</span>
+          </div>
+          <div class="divide-y divide-[var(--card-border)] max-h-[560px] overflow-y-auto" id="ocorrenciasListContainer">
+          </div>
+        </div>
+
+        <!-- Investigation Detail & Status Editor Panel -->
+        <div class="lg:col-span-5 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 space-y-4" id="investigationPanel">
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- TAB 3: ADMINISTRAÇÃO DE LOCAIS POR CONTRATO/SETOR                 -->
+    <!-- ================================================================= -->
+    <div id="view-admin" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div class="lg:col-span-5 bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-4">
+        <h2 class="text-sm font-bold">➕ Cadastrar Novo Local Fixo (Usuário Administrador)</h2>
+        <p class="text-xs text-[var(--muted-foreground)]">
+          Conforme definido na conversa, o campo <strong>Local</strong> não é texto livre para o vigilante: o administrador cadastra os locais oficiais do contrato aqui e eles aparecem imediatamente no menu suspenso do App Mobile.
+        </p>
+        <div>
+          <label class="text-xs font-semibold block mb-1">Setor / Contrato</label>
+          <select id="adminSectorSelect" onchange="renderAdminLocais()" class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg px-3 py-2 text-xs">
+          </select>
+        </div>
+        <div>
+          <label class="text-xs font-semibold block mb-1">Nome Oficial do Posto / Local *</label>
+          <input type="text" id="adminNewLocalName" placeholder="Ex: Portaria Principal, Doca 02, Sala Cofre..." class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg px-3 py-2 text-xs" />
+        </div>
+        <button onclick="addAdminLocal()" class="w-full py-2.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-bold hover:opacity-90">
+          + Adicionar Local ao Contrato
+        </button>
+      </div>
+
+      <div class="lg:col-span-7 bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-bold">📍 Locais Cadastrados para o Setor Selecionado</h3>
+          <span id="adminLocaisCount" class="text-xs text-[var(--muted-foreground)]"></span>
+        </div>
+        <div id="adminLocaisList" class="space-y-2"></div>
+      </div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- TAB 4: EXPLORADOR DA MATRIZ COMPLETA (14 SETORES x 6 CATEGORIAS)  -->
+    <!-- ================================================================= -->
+    <div id="view-matriz" class="hidden space-y-4">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="text-sm font-bold">Matriz Consolidada: 22 Opções Nucleares Globais + 102 Opções Específicas</h2>
+          <p class="text-xs text-[var(--muted-foreground)]">
+            Todas as ocorrências nucleares permanecem clicáveis dentro das 6 categorias em todos os 14 setores, somadas às opções específicas de cada operação.
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <input type="text" id="matrixSearchInput" oninput="renderFullMatrix()" placeholder="Buscar termo (ex: arma, doca, silo, UTI, laser)..." class="bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs w-64" />
+        </div>
+      </div>
+
+      <div id="fullMatrixContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // =========================================================================
+    // 1. TAXONOMIA OFICIAL COMPLETA (6 Categorias Nucleares + 14 Setores)
+    // =========================================================================
+    const CATEGORIAS_NUCLEARES = [
+      {
+        id: 1,
+        nome: "1. Crimes Contra o Patrimônio",
+        icone: "🛡️",
+        nucleares: [
+          "Furto ou Tentativa (Geral)",
+          "Roubo ou Tentativa (Geral)",
+          "Dano ao Patrimônio / Vandalismo (Geral)"
+        ]
+      },
+      {
+        id: 2,
+        nome: "2. Controle de Acesso, Intrusão e Evasão",
+        icone: "🚧",
+        nucleares: [
+          "Acesso não autorizado a área restrita",
+          "Invasão de perímetro ou propriedade",
+          "Tentativa de acesso com falsa identificação / Fraude documental"
+        ]
+      },
+      {
+        id: 3,
+        nome: "3. Incidentes com Pessoas",
+        icone: "🚑",
+        nucleares: [
+          "Homicídio / Óbito violento ou suspeito",
+          "Agressão (Lesão corporal, ameaça ou vias de fato)",
+          "Acidente pessoal ou Mal súbito (Necessidade de APH)",
+          "Comportamento inadequado / Desordem / Assédio"
+        ]
+      },
+      {
+        id: 4,
+        nome: "4. Inconformidades Procedimentais e Operacionais",
+        icone: "📋",
+        nucleares: [
+          "Descumprimento de norma interna / Procedimento padrão",
+          "Obstrução de saída de emergência ou porta corta-fogo aberta/travada",
+          "Instalação ou acesso encontrado vulnerável (porta/janela destrancada)",
+          "Extravio, perda ou retenção de objeto pessoal/corporativo (crachá, chaves)"
+        ]
+      },
+      {
+        id: 5,
+        nome: "5. Infraestrutura, Emergências e Tráfego",
+        icone: "🔥",
+        nucleares: [
+          "Princípio de incêndio / Fumaça / Disparo de alarme",
+          "Problemas com equipamentos de segurança ou combate a incêndio (CFTV, controle de acesso, alarme, extintores)",
+          "Problemas com estruturas prediais ou utilidades (energia, água, gás)",
+          "Acidente ou inconformidade com veículo no pátio/estacionamento"
+        ]
+      },
+      {
+        id: 6,
+        nome: "6. Segurança Pública e Ilícitos Diversos",
+        icone: "⚠️",
+        nucleares: [
+          "Porte ilegal de arma (branca ou de fogo) ou munição",
+          "Uso, porte ou tráfico de substâncias ilícitas",
+          "Objeto ou pacote suspeito / abandonado (Ameaça de bomba)",
+          "Outros tipos de inconformidade / Ocorrência atípica"
+        ]
+      }
+    ];
+
+    const SETORES = [
+      {
+        id: 1,
+        nome: "1. Setor Logístico (Transportadoras e Centros de Distribuição)",
+        locaisPadrao: ["Portaria Rodoviária / Balança", "Doca 02 - Recebimento", "Armazém Central - Rua B", "Pátio de Carretas"],
+        especificos: {
+          1: [
+            "Furto ou violação de carga/mercadoria em doca ou armazém",
+            "Roubo ou tentativa de tomada de veículo/carga na chegada ou saída"
+          ],
+          2: [
+            "Evasão de balança rodoviária ou portaria sem liberação",
+            "Motorista ou ajudante circulando fora da área de espera"
+          ],
+          3: [],
+          4: [
+            "Armazenamento inadequado de mercadoria",
+            "Caminhão aberto fora da doca",
+            "Manuseio inadequado de carga ou equipamento",
+            "Mercadoria exposta ou fora de área demarcada",
+            "Mercadoria violada ou com rompimento injustificado de lacre",
+            "Objeto pessoal retido na revista",
+            "Pacote encontrado fora de fluxo / sem identificação",
+            "Divergência de Nota Fiscal, manifesto ou conferência de carga"
+          ],
+          5: [
+            "Problemas com equipamentos operacionais (empilhadeiras, niveladoras de doca)",
+            "Tombamento de carga ou colisão interna no armazém"
+          ],
+          6: []
+        }
+      },
+      {
+        id: 2,
+        nome: "2. Setor Administrativo (Escritórios e Sedes Corporativas)",
+        locaisPadrao: ["Recepção Principal / Catracas", "5º Andar - Diretoria & TI", "Estacionamento Subsolo G1", "Sala de Correspondência / Malotes"],
+        especificos: {
+          1: [
+            "Furto de equipamentos de TI (notebooks, periféricos, celulares corporativos)"
+          ],
+          2: [
+            "Visitante ou prestador circulando sem escolta/acompanhamento",
+            "Permanência no prédio fora do horário de expediente sem autorização"
+          ],
+          3: [],
+          4: [
+            "Quebra de protocolo de Segurança da Informação (mesa limpa, tela desbloqueada, documento exposto)",
+            "Irregularidade no recebimento de malotes ou correspondências"
+          ],
+          5: [
+            "Retenção de pessoas em elevador / Falha de transporte vertical"
+          ],
+          6: []
+        }
+      },
+      {
+        id: 3,
+        nome: "3. Setor Industrial (Fábricas, Usinas e Estações de Tratamento)",
+        locaisPadrao: ["Linha de Produção Asséptica 01", "Subestação Elétrica / Caldeira", "Estação de Tratamento (ETA/ETE)", "Portaria Industrial de Insumos"],
+        especificos: {
+          1: [
+            "Furto de cabos de cobre, matéria-prima, insumos ou ferramental",
+            "Sabotagem ou adulteração deliberada de linha de produção/tratamento"
+          ],
+          2: [
+            "Acesso não autorizado a subestação, caldeira ou área classificada de risco"
+          ],
+          3: [
+            "Acidente de trabalho severo com maquinário ou linha industrial"
+          ],
+          4: [
+            "Ausência ou uso incorreto de EPI/EPC obrigatório",
+            "Violação de protocolo de segurança de máquinas (burla de sensor, falta de bloqueio LOTO)",
+            "Inconformidade na pesagem, lacre ou fluxo de insumos na portaria industrial"
+          ],
+          5: [
+            "Incidente ambiental, vazamento químico, derramamento de efluentes ou emissão de gases"
+          ],
+          6: []
+        }
+      },
+      {
+        id: 4,
+        nome: "4. Setor Tecnológico (Data Centers e Hubs de TI)",
+        locaisPadrao: ["Sala Cofre Principal - Hall A", "Gaiola de Colocation 04", "Eclusa Biométrica de Acesso", "Sala de UPS / Banco de Baterias", "Almoxarifado de Equipamentos Ópticos"],
+        especificos: {
+          1: [
+            "Furto de componentes físicos de servidores (HDDs, memórias, placas, cabos)",
+            "Dano físico ou corte intencional de fibra óptica / cabeamento estruturado"
+          ],
+          2: [
+            "Acesso não autorizado à Sala Cofre ou gaiola de clientes (Colocation)",
+            "Quebra de protocolo de eclusa / Entrada carona (Tailgating / Piggybacking)"
+          ],
+          3: [],
+          4: [
+            "Violação de rack (abertura sem ordem de serviço) ou conexão de mídia física não autorizada",
+            "Registro fotográfico ou filmagem não autorizada no interior das áreas técnicas"
+          ],
+          5: [
+            "Alerta crítico de climatização (HVAC/Chillers), elevação de temperatura ou umidade na Sala Cofre",
+            "Falha em sistema de energia ininterrupta (UPS/No-break, banco de baterias ou geradores)",
+            "Disparo acidental ou real de sistema de supressão por gás inerte"
+          ],
+          6: []
+        }
+      },
+      {
+        id: 5,
+        nome: "5. Setor Varejista (Lojas, Atacarejos e Supermercados)",
+        locaisPadrao: ["Salão de Vendas - Corredor Central", "Frente de Caixa (PDVs)", "Estoque de Alto Valor (Eletrônicos/Bebidas)", "Doca de Recebimento de Mercadorias"],
+        especificos: {
+          1: [
+            "Furto externo por cliente no salão de vendas (Shoplifting)",
+            "Furto interno ou desvio por colaborador/terceirizado/promotor",
+            "Roubo a frente de caixa (PDV), cofre ou tesouraria",
+            "Arrombamento noturno de loja ou quebra de vitrine"
+          ],
+          2: [
+            "Evasão de Frente de Caixa (PDV) sem pagamento",
+            "Acesso não autorizado ao estoque de alto valor (eletrônicos, bebidas, perfumaria)"
+          ],
+          3: [],
+          4: [
+            "Consumo indevido de produtos no interior da loja sem pagamento",
+            "Violação de embalagens, troca de etiquetas de preço ou ocultação de produtos nas gôndolas",
+            "Violação ou remoção de etiqueta rígida/adesiva antifurto (EAS)",
+            "Irregularidade na doca de recebimento (divergência de nota, caminhão aberto, paletes abandonados)"
+          ],
+          5: [
+            "Falha em antenas antifurto (EAS) ou câmeras de frente de caixa",
+            "Falha em balcões refrigerados ou câmaras frias (risco de perda de perecíveis)"
+          ],
+          6: [
+            "Recebimento de cédula falsa ou fraude em meio de pagamento/PIX"
+          ]
+        }
+      },
+      {
+        id: 6,
+        nome: "6. Setor Recreativo (Clubes, Parques, Arenas e Estádios)",
+        locaisPadrao: ["Catracas de Bilheteria Norte", "Arquibancada Setor Sul", "Parque Aquático / Piscina Olímpica", "Vestiários e Guarda-Volumes"],
+        especificos: {
+          1: [
+            "Furto em guarda-volumes, vestiários ou armários de sócios/frequentadores",
+            "Depredação de arquibancadas, assentos, banheiros ou instalações esportivas"
+          ],
+          2: [
+            "Invasão de campo/gramado, palco, camarim ou piscina interditada",
+            "Evasão de bilheteria / Pulo de catraca / Uso de ingresso falso"
+          ],
+          3: [
+            "Briga generalizada / Confronto entre torcidas ou grupos",
+            "Criança, idoso ou pessoa vulnerável perdida/desencontrada",
+            "Embriaguez severa / Coma alcoólico",
+            "Afogamento ou incidente aquático em parque/clube"
+          ],
+          4: [
+            "Descumprimento de regras de segurança em atrações, brinquedos ou piscinas"
+          ],
+          5: [
+            "Parada técnica ou falha mecânica em brinquedo/atração com público"
+          ],
+          6: [
+            "Retenção de item proibido na revista (garrafas de vidro, rojões, sinalizadores, laser)",
+            "Cambismo ou venda ilegal de ingressos no perímetro"
+          ]
+        }
+      },
+      {
+        id: 7,
+        nome: "7. Setor Agropecuarista (Fazendas, Usinas Agrícolas e Silos)",
+        locaisPadrao: ["Curral / Galpão de Ordenha Leiteira", "Silo de Grãos Principal", "Galpão de Defensivos Agrícolas", "Porteira Leste - Estrada Interna"],
+        especificos: {
+          1: [
+            "Furto ou roubo de defensivos agrícolas, sementes ou fertilizantes",
+            "Furto ou abate clandestino de animais / gado (Abigeato)",
+            "Furto de maquinário agrícola, tratores, módulos GPS ou combustível",
+            "Desvio de grãos/safra durante a colheita ou armazenamento em silos"
+          ],
+          2: [
+            "Ocupação ou invasão coletiva de terras / Esbulho possessório",
+            "Trânsito de veículos ou pessoas desconhecidas em estradas internas da propriedade"
+          ],
+          3: [
+            "Acidente com animal peçonhento ou ataque de animal de grande porte",
+            "Engolfamento em silo de grãos ou acidente grave com implemento agrícola"
+          ],
+          4: [
+            "Cerca cortada, mourão danificado ou porteira deixada aberta",
+            "Fuga ou extravio de rebanho para áreas externas ou rodovias"
+          ],
+          5: [
+            "Incêndio florestal, queimada em pastagem ou lavoura"
+          ],
+          6: [
+            "Caça, pesca predatória ou desmatamento ilegal dentro da propriedade"
+          ]
+        }
+      },
+      {
+        id: 8,
+        nome: "8. Setor Extrativista (Mineração, Siderurgia de Base e Florestal)",
+        locaisPadrao: ["Perímetro da Mata / Cava da Pedreira", "Zona de Detonação (Desmonte)", "Paiol de Explosivos", "Barragem de Contenção Setor 2"],
+        especificos: {
+          1: [
+            "Furto ou desvio de minério concentrado, cargas de madeira ou explosivos",
+            "Furto de componentes de maquinário pesado (baterias, pneus gigantes, cabos)"
+          ],
+          2: [
+            "Invasão para garimpo ilegal ou extração clandestina de madeira na concessão",
+            "Violação de perímetro de segurança em zona de detonação (fogo/desmonte) ou barragem"
+          ],
+          3: [
+            "Soterramento, queda de rocha ou acidente em cava/subsolo"
+          ],
+          4: [
+            "Irregularidade na escolta, armazenamento ou manuseio de explosivos (paiol)",
+            "Caminhão fora de estrada ou veículo leve trafegando sem bandeirola/escolta na mina"
+          ],
+          5: [
+            "Anomalia geotécnica, deslizamento de talude ou acionamento de sirene de barragem",
+            "Bloqueio de via de escoamento ou ferrovia interna por manifestantes/comunidade"
+          ],
+          6: []
+        }
+      },
+      {
+        id: 9,
+        nome: "9. Setor Hospitalar (Hospitais, Clínicas e Laboratórios)",
+        locaisPadrao: ["Recepção Pronto-Socorro / Rampa", "Farmácia Central de Psicotrópicos", "Maternidade / Berçário 2º Andar", "UTI Adulto / Centro Cirúrgico"],
+        especificos: {
+          1: [
+            "Furto ou desvio de medicamentos controlados (psicotrópicos/opioides) ou insumos",
+            "Furto de equipamentos médicos (monitores, oxímetros, bombas de infusão)",
+            "Furto de pertences de pacientes internados ou acompanhantes"
+          ],
+          2: [
+            "Acesso não autorizado a UTI, Centro Cirúrgico, Farmácia Central ou Necrotério",
+            "Tentativa de acesso não autorizado ou rapto em Maternidade / Berçário",
+            "Evasão de paciente sem alta médica (fuga hospitalar ou psiquiátrica)"
+          ],
+          3: [
+            "Agressão ou hostilidade de pacientes/familiares contra equipe médica ou recepção",
+            "Surto psicótico, agitação severa ou tentativa de suicídio de paciente"
+          ],
+          4: [
+            "Descarte irregular de lixo hospitalar, risco biológico ou material perfurocortante",
+            "Troca ou ausência de pulseira de identificação de paciente/acompanhante"
+          ],
+          5: [
+            "Falha crítica no suprimento de gases medicinais (oxigênio/vácuo) ou geradores de emergência",
+            "Obstrução de rampa de ambulâncias / Pronto-Socorro"
+          ],
+          6: [
+            "Exercício ilegal da medicina (falso médico/enfermeiro) ou escolta policial de paciente custodiado"
+          ]
+        }
+      },
+      {
+        id: 10,
+        nome: "10. Setor Educacional (Escolas, Universidades e Campus)",
+        locaisPadrao: ["Portaria Escolar Principal", "Bloco Didático C - Salas de Aula", "Laboratório Químico / Físico", "Quadra Poliesportiva"],
+        especificos: {
+          1: [
+            "Furto de equipamentos de laboratório, projetores, computadores ou acervo de biblioteca",
+            "Depredação ou pichação de carteiras, salas de aula e banheiros"
+          ],
+          2: [
+            "Entrada de pessoa estranha à comunidade acadêmica (não aluno/não autorizado)",
+            "Evasão escolar de menor de idade sem autorização dos responsáveis"
+          ],
+          3: [
+            "Briga entre estudantes, bullying severo ou trote violento",
+            "Ameaça de ataque ativo / Massacre escolar (redes sociais ou pichações)",
+            "Conflito com pais ou responsáveis exaltados na portaria/secretaria"
+          ],
+          4: [
+            "Permanência de alunos em salas ou blocos isolados após o encerramento das aulas"
+          ],
+          5: [
+            "Acidente em laboratório químico/físico ou quadra poliesportiva"
+          ],
+          6: [
+            "Uso ou comercialização de cigarros eletrônicos (vapes) ou álcool por menores"
+          ]
+        }
+      },
+      {
+        id: 11,
+        nome: "11. Setor Multicomercial (Shopping Centers, Galerias e Centros Empresariais)",
+        locaisPadrao: ["Praça de Alimentação - Piso L3", "Estacionamento Coberto G2", "Corredor de Joalherias - Piso L1", "Docas e Corredores Técnicos"],
+        especificos: {
+          1: [
+            "Furto de veículo, módulo, estepe ou pertences no interior de veículo no estacionamento",
+            "Furto de celular/carteira de clientes na praça de alimentação ou corredores",
+            "Furto ou arrombamento de loja/quiosque (fechamento ou madrugada)",
+            "Roubo a joalheria, casa de câmbio, loja de eletrônicos ou carro-forte"
+          ],
+          2: [
+            "Evasão de cancela de estacionamento sem pagamento ou fraude de ticket",
+            "Acesso não autorizado a corredores técnicos, telhado ou casa de máquinas",
+            "Fornecedor ou prestador realizando carga/descarga fora do horário permitido"
+          ],
+          3: [
+            "Criança, idoso ou pessoa vulnerável perdida no mall",
+            "Tumulto, arrastão, manifestação ou aglomeração atípica (\"rolezinho\")"
+          ],
+          4: [
+            "Abandono de paletes, caixas ou resíduos por lojistas nas docas/corredores técnicos",
+            "Loja operando fora do horário padrão ou realizando obra sem autorização (RRI)",
+            "Descarte irregular de óleo ou lixo orgânico fora das normas da administração"
+          ],
+          5: [
+            "Acidente ou falha em escada rolante, esteira ou elevador panorâmico",
+            "Vazamento de gás/fumaça em coifa de restaurante na praça de alimentação",
+            "Veículo abandonado no estacionamento (múltiplos pernoites)"
+          ],
+          6: [
+            "Comércio ambulante, mendicância ou panfletagem não autorizada no mall"
+          ]
+        }
+      },
+      {
+        id: 12,
+        nome: "12. Setor Aeroportuário (Aeroportos, Terminais de Carga Aérea e Heliportos)",
+        locaisPadrao: ["Canal de Inspeção Raio-X (ARS)", "Pátio de Manobras / Rampa 04", "Terminal de Cargas (TECA)", "Portão de Embarque B12"],
+        especificos: {
+          1: [
+            "Violação ou furto de bagagem despachada (rampa/triagem) ou de mão",
+            "Furto ou roubo no Terminal de Cargas (TECA)",
+            "Dano intencional a aeronave, auxílio de navegação ou equipamento de solo (GSE)"
+          ],
+          2: [
+            "Intrusão em Área Restrita de Segurança (ARS), Pátio de Manobras ou Pista de Pouso",
+            "Passageiro circulando desacompanhado no pátio de aeronaves",
+            "Evasão de inspeção de segurança (canal de Raio-X / pórtico detector de metais)"
+          ],
+          3: [
+            "Passageiro indisciplinado (Unruly passenger) em solo ou desembarque compulsório de aeronave",
+            "Tumulto generalizado em portão de embarque ou balcão de check-in (atrasos/cancelamentos)"
+          ],
+          4: [
+            "Não ostentação ou uso irregular de Credencial Aeroportuária (ATIV/Credencial de Pátio)",
+            "Objeto deixado na pista/pátio com risco de ingestão por turbinas (FOD - Foreign Object Debris)"
+          ],
+          5: [
+            "Presença de animais ou aves na pista de pouso (Risco de Fauna / Bird Strike)",
+            "Acidente ou abalroamento envolvendo veículos de apoio em solo (Pushback, catering, abastecimento)",
+            "Derramamento de combustível de aviação (QAV) no pátio"
+          ],
+          6: [
+            "Retenção de item proibido no canal de inspeção (Raio-X) ou embarque clandestino de arma",
+            "Apontamento de raio laser ou drone clandestino no cone de aproximação de aeronaves"
+          ]
+        }
+      },
+      {
+        id: 13,
+        nome: "13. Setor Rodoferroviário (Rodovias, Ferrovias, Metrôs e Terminais)",
+        locaisPadrao: ["Plataforma Central - Linha 1", "Passagem em Nível (PN) Km 42", "Praça de Pedágio Sul", "Pátio de Manobras Ferroviário"],
+        especificos: {
+          1: [
+            "Furto de cabos de cobre, sinalização, baterias ou fibra óptica ao longo da via",
+            "Furto de trilhos, dormentes, talas de junção ou grampos de fixação",
+            "Saque de carga (após parada forçada, acidente ou abertura intencional de bica de vagão)",
+            "Furto/Roubo a passageiros no interior de vagões, ônibus ou plataformas",
+            "Apedrejamento, pichação (graffiti) ou depredação de trens, praças de pedágio e estações"
+          ],
+          2: [
+            "Evasão de tarifa (pulo de catraca, passagem por baixo/carona) em estação",
+            "Evasão de praça de pedágio ou balança de pesagem rodoviária",
+            "Invasão de faixa de domínio ou caminhada sobre a via permanente/túnel"
+          ],
+          3: [
+            "Atropelamento ferroviário ou rodoviário (acidental ou tentativa de suicídio na via)",
+            "Importunação ou assédio sexual no interior de composição/estação",
+            "Queda de usuário no vão entre o trem e a plataforma"
+          ],
+          4: [
+            "Passatismo (\"surf\" ferroviário ou carona clandestina entre vagões de carga/passageiros)",
+            "Acionamento indevido de botão de emergência ou freio de composição sem emergência real"
+          ],
+          5: [
+            "Descarrilamento, abalroamento em passagem em nível (PN) ou colisão grave em rodovia",
+            "Obstrução intencional de via (barricadas, queima de pneus, protestos ou pedras nos trilhos)",
+            "Queda de barreira/deslizamento ou presença de animais de grande porte soltos na via",
+            "Acidente envolvendo transporte de produtos perigosos (HAZMAT)"
+          ],
+          6: [
+            "Comércio irregular ambulante no interior de trens e estações (Marreteiros)"
+          ]
+        }
+      },
+      {
+        id: 14,
+        nome: "14. Setor Residencial (Condomínios Horizontais e Verticais)",
+        locaisPadrao: ["Portaria de Pedestres / Clausura", "Portão de Veículos & Garagem G1", "Bloco B - Áreas Comuns", "Salão de Festas & Churrasqueira"],
+        especificos: {
+          1: [
+            "Furto ou invasão no interior de unidade autônoma (casa ou apartamento)",
+            "Furto de bicicletas, encomendas (delivery) ou objetos em vagas de garagem"
+          ],
+          2: [
+            "Entregador de aplicativo ou prestador circulando nos blocos/ruas sem liberação da portaria",
+            "Entrada carona pelo portão de veículos ou clausura de pedestres sem identificação"
+          ],
+          3: [
+            "Ocorrência de violência doméstica ou familiar na unidade",
+            "Desinteligência severa ou vias de fato entre condôminos ou contra funcionários da portaria"
+          ],
+          4: [
+            "Realização de obras, mudanças ou serviços fora do horário permitido no Regimento Interno",
+            "Ocupação indevida de vaga de garagem alheia ou área de manobra",
+            "Descarte irregular de lixo ou entulho nas áreas comuns/escadarias"
+          ],
+          5: [
+            "Excesso de velocidade ou direção perigosa nas vias internas do condomínio"
+          ],
+          6: [
+            "Perturbação do sossego (festas, som alto ou barulho excessivo após horário limite)",
+            "Incidente com animais domésticos (soltos sem guia em área comum, ataque ou ruído contínuo)"
+          ]
+        }
+      }
+    ];
+
+    // =========================================================================
+    // 2. CASOS DE TESTE REAIS EXTRAÍDOS DA CONVERSA DO USUÁRIO
+    // =========================================================================
+    const CASOS_TESTE_CONVERSA = [
+      {
+        titulo: "1. Pedreira: Crianças entram pela mata buscando cachorro",
+        setorId: 8,
+        local: "Perímetro da Mata / Cava da Pedreira",
+        categoriaId: 2,
+        opcao: "Violação de perímetro de segurança em zona de detonação (fogo/desmonte) ou barragem",
+        origem: "ESPECIFICO",
+        descricao: "Grupo de 3 crianças adentrou a propriedade pela mata lateral procurando um cachorro perdido, aproximando-se da zona de segurança da cava.",
+        acoes: "Interrupção imediata da movimentação de máquinas no trecho, abordagem acolhedora sem contenção física e acionamento dos responsáveis e supervisão.",
+        conclusaoAgente: "Menores entregues em segurança aos responsáveis na portaria; ponto de cerca na mata sinalizado para manutenção.",
+        statusApuracao: "Concluída",
+        conclusaoFinal: "Infração Confirmada",
+        analise: "Câmeras térmicas confirmaram a entrada pelo trecho sul da mata. Aberta OS para reforço da cerca perimetral."
+      },
+      {
+        titulo: "2. Farmacêutica: Funcionário sem paramentação em área asséptica",
+        setorId: 3,
+        local: "Linha de Produção Asséptica 01",
+        categoriaId: 4,
+        opcao: "Ausência ou uso incorreto de EPI/EPC obrigatório",
+        origem: "ESPECIFICO",
+        descricao: "Colaborador autorizado ingressou na sala limpa (área asséptica) sem a paramentação estéril obrigatória exigida pelo protocolo sanitário.",
+        acoes: "Solicitada saída imediata da área controlada e comunicada a Garantia da Qualidade e supervisão de turno.",
+        conclusaoAgente: "Acesso interrompido; lote em bancada isolado preventivamente pela equipe técnica.",
+        statusApuracao: "Em Apuração",
+        conclusaoFinal: null,
+        analise: "Auditando registros de controle de acesso da eclusa e imagens internas junto à Qualidade."
+      },
+      {
+        titulo: "3. Estúdio de TV: Porta de sala de lentes de alto valor esquecida aberta",
+        setorId: 4,
+        local: "Almoxarifado de Equipamentos Ópticos",
+        categoriaId: 4,
+        opcao: "Instalação ou acesso encontrado vulnerável (porta/janela destrancada)",
+        origem: "NUCLEAR",
+        descricao: "Durante ronda preventiva noturna, constatou-se que a porta do ambiente onde ficam armazenados equipamentos ópticos de alto valor foi esquecida destrancada pelo responsável.",
+        acoes: "Vistoria visual imediata do interior, acionamento do responsável da área para conferência de inventário e trancamento do local.",
+        conclusaoAgente: "Sem sinais aparentes de arrombamento; porta trancada e lacrada após conferência preliminar.",
+        statusApuracao: "Concluída",
+        conclusaoFinal: "Infração Confirmada",
+        analise: "Confirmado pelo CFTV que o último colaborador saiu às 21h14 sem acionar a fechadura eletromagnética. Nenhum item subtraído."
+      },
+      {
+        titulo: "4. Ferrovia: Pessoa se joga intencionalmente na linha do trem (Óbito)",
+        setorId: 13,
+        local: "Plataforma Central - Linha 1",
+        categoriaId: 3,
+        opcao: "Atropelamento ferroviário ou rodoviário (acidental ou tentativa de suicídio na via)",
+        origem: "ESPECIFICO",
+        descricao: "Usuário lançou-se intencionalmente no gabarito da via permanente no momento da aproximação da composição T-09, vindo a óbito no local.",
+        acoes: "Corte imediato de energia da via, isolamento da plataforma, acionamento do SAMU, Polícia Civil e IML, e preservação das imagens de CFTV.",
+        conclusaoAgente: "Via interditada aguardando liberação da perícia técnica oficial.",
+        statusApuracao: "Interrompida",
+        conclusaoFinal: null,
+        analise: "Investigação pausada aguardando emissão do laudo pericial do IML e encerramento do Boletim de Ocorrência pela Polícia Civil."
+      },
+      {
+        titulo: "5. Fazenda de Leite: Funcionário mata animais intencionalmente",
+        setorId: 7,
+        local: "Curral / Galpão de Ordenha Leiteira",
+        categoriaId: 1,
+        opcao: "Dano ao Patrimônio / Vandalismo (Geral)",
+        origem: "NUCLEAR",
+        descricao: "Funcionário em surto de fúria atacou e matou intencionalmente matrizes leiteiras no galpão de ordenha, visando causar prejuízo patrimonial à fazenda.",
+        acoes: "Isolamento da área, contenção preventiva até chegada da Polícia Militar e acionamento do médico veterinário responsável.",
+        conclusaoAgente: "Autor conduzido pela PM à delegacia; 4 semoventes mortos contabilizados para perícia e seguro.",
+        statusApuracao: "Em Apuração",
+        conclusaoFinal: null,
+        analise: "Levantamento contábil do valor dos ativos biológicos perdidos para apólice de seguro e instrução de inquérito."
+      },
+      {
+        titulo: "6. Data Center: Limpeza molha servidor acidentalmente",
+        setorId: 4,
+        local: "Sala Cofre Principal - Hall A",
+        categoriaId: 4,
+        opcao: "Descumprimento de norma interna / Procedimento padrão",
+        origem: "NUCLEAR",
+        descricao: "Auxiliar de limpeza terceirizado utilizou pano úmido/líquido próximo ao rack 14 da Sala Cofre, respingando água na grade frontal de um servidor.",
+        acoes: "Interrupção imediata da limpeza, retirada do balde da área técnica e acionamento urgente da equipe de NOC/Infraestrutura.",
+        conclusaoAgente: "Equipamento avaliado pela equipe técnica sem curto-circuito imediato.",
+        statusApuracao: "Não Iniciada",
+        conclusaoFinal: null,
+        analise: ""
+      },
+      {
+        titulo: "7. Ronda Sabesp: Extintor com data de validade vencida",
+        setorId: 3,
+        local: "Estação de Tratamento (ETA/ETE)",
+        categoriaId: 5,
+        opcao: "Problemas com equipamentos de segurança ou combate a incêndio (CFTV, controle de acesso, alarme, extintores)",
+        origem: "NUCLEAR",
+        descricao: "Em ronda preventiva na ETA, o vigilante constatou que o extintor de Pó Químico Seco (PQS #12) do corredor de bombas está com a carga/inspeção vencida.",
+        acoes: "Registro fotográfico do selo de validade e comunicação imediata ao SESMT / Manutenção Predial.",
+        conclusaoAgente: "Equipamento sinalizado para substituição imediata pela brigada/SESMT.",
+        statusApuracao: "Concluída",
+        conclusaoFinal: "Infração Confirmada",
+        analise: "SESMT realizou a troca do cilindro vencido por unidade reserva dentro da validade."
+      }
+    ];
+
+    // =========================================================================
+    // 3. ESTADO DA APLICAÇÃO
+    // =========================================================================
+    let currentTab = "mobile";
+    let activeSectorId = 1;
+    let isOnline = true;
+    let currentStep = 1;
+    let selectedCategoryId = 1;
+    let selectedOption = {
+      titulo: CATEGORIAS_NUCLEARES[0].nucleares[0],
+      origem: "NUCLEAR"
+    };
+    let currentEvidences = [];
+    let selectedOcorrenciaId = null;
+
+    // Locais gerenciados pelo Admin (inicializados a partir dos 14 setores)
+    const locaisPorSetor = {};
+    SETORES.forEach(s => {
+      locaisPorSetor[s.id] = s.locaisPadrao.map((nome, idx) => ({
+        id: `loc-${s.id}-${idx + 1}`,
+        nome,
+        ativo: true
+      }));
+    });
+
+    // Filas de Ocorrências (Sincronizadas no Banco vs. Fila Offline Dexie.js)
+    let ocorrenciasDB = [];
+    let offlineQueue = [];
+
+    // =========================================================================
+    // 4. FUNÇÕES AUXILIARES (HASH SHA-256 DETERMINÍSTICO E PROTOCOLO)
+    // =========================================================================
+    function generateSha256Hex(str) {
+      // Gerador determinístico de 64 caracteres hexadecimais simulando SHA-256 síncrono
+      let h1 = 0xdeadbeef ^ str.length, h2 = 0x41c6ce57 ^ str.length;
+      let h3 = 0x9e3779b9 ^ str.length, h4 = 0x85ebca6b ^ str.length;
+      for (let i = 0, ch; i < str.length; i++) {
+        ch = str.charCodeAt(i);
+        h1 = Math.imul(h1 ^ ch, 2654435761);
+        h2 = Math.imul(h2 ^ ch, 1597334677);
+        h3 = Math.imul(h3 ^ ch, 2246822507);
+        h4 = Math.imul(h4 ^ ch, 3266489909);
+      }
+      const hex = (n) => (n >>> 0).toString(16).padStart(8, "0");
+      return (
+        hex(h1) + hex(h2) + hex(h3) + hex(h4) +
+        hex(h1 ^ h3) + hex(h2 ^ h4) + hex(h1 + h2) + hex(h3 + h4)
+      ).slice(0, 64);
+    }
+
+    function getSectorById(id) {
+      return SETORES.find(s => s.id === Number(id)) || SETORES[0];
+    }
+
+    function getCategoryById(id) {
+      return CATEGORIAS_NUCLEARES.find(c => c.id === Number(id)) || CATEGORIAS_NUCLEARES[0];
+    }
+
+    // =========================================================================
+    // 5. INICIALIZAÇÃO
+    // =========================================================================
+    function initApp() {
+      // Populate Sector Selectors
+      const globalSel = document.getElementById("globalSectorSelect");
+      const adminSel = document.getElementById("adminSectorSelect");
+      const filterSetor = document.getElementById("filterSetor");
+
+      globalSel.innerHTML = "";
+      adminSel.innerHTML = "";
+      filterSetor.innerHTML = `<option value="ALL">Todos os 14 Setores</option>`;
+
+      SETORES.forEach(s => {
+        globalSel.innerHTML += `<option value="${s.id}">${s.nome}</option>`;
+        adminSel.innerHTML += `<option value="${s.id}">${s.nome}</option>`;
+        filterSetor.innerHTML += `<option value="${s.id}">${s.nome}</option>`;
+      });
+
+      // Set default datetime
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      document.getElementById("formDataHora").value = now.toISOString().slice(0, 16);
+
+      // Seed initial 4 occurrences from the conversation so Apuração is rich immediately
+      seedInitialOcorrencias();
+
+      renderTestScenarios();
+      handleSectorChange(1);
+      switchTab("mobile");
+    }
+
+    function seedInitialOcorrencias() {
+      ocorrenciasDB = [];
+      CASOS_TESTE_CONVERSA.slice(0, 5).forEach((c, idx) => {
+        createOcorrenciaFromCase(c, idx + 1);
+      });
+      selectedOcorrenciaId = ocorrenciasDB[0]?.id || null;
+      updateCounters();
+    }
+
+    function seedAllTestCases() {
+      ocorrenciasDB = [];
+      CASOS_TESTE_CONVERSA.forEach((c, idx) => {
+        createOcorrenciaFromCase(c, idx + 1);
+      });
+      selectedOcorrenciaId = ocorrenciasDB[0]?.id || null;
+      updateCounters();
+      renderApuracaoTable();
+      renderInvestigationPanel();
+    }
+
+    function createOcorrenciaFromCase(c, seq) {
+      const cat = getCategoryById(c.categoriaId);
+      const setor = getSectorById(c.setorId);
+      const payloadStr = `${c.setorId}|${c.local}|${cat.nome}|${c.opcao}|${c.descricao}`;
+      const protocolo = `OCR-2026-${String(1000 + seq)}`;
+      ocorrenciasDB.push({
+        id: `ocr-${seq}-${Date.now()}`,
+        protocolo,
+        setorId: c.setorId,
+        setorNome: setor.nome,
+        localNome: c.local,
+        categoriaId: c.categoriaId,
+        categoriaNuclear: cat.nome,
+        opcaoEspecifica: c.opcao,
+        origemOpcao: c.origem,
+        descricao: c.descricao,
+        acoesTomadas: c.acoes,
+        conclusaoAgente: c.conclusaoAgente,
+        dataHoraFato: "2026-11-11 06:30",
+        gps: "-23.550520, -46.633308",
+        hashIntegridade: generateSha256Hex(payloadStr),
+        evidencias: [{ tipo: "FOTO_LOCAL", nome: `evidencia_${protocolo}.jpg` }],
+        apuracao: {
+          status: c.statusApuracao,
+          responsavel: "Auditor Marcos (CFTV/Segurança)",
+          analiseTexto: c.analise || "",
+          conclusaoFinal: c.conclusaoFinal,
+          updatedAt: "11/11/2026 06:55"
+        }
+      });
+    }
+
+    // =========================================================================
+    // 6. NAVEGAÇÃO ENTRE ABAS E SETORES
+    // =========================================================================
+    function switchTab(tab) {
+      currentTab = tab;
+      ["mobile", "apuracao", "admin", "matriz"].forEach(t => {
+        const view = document.getElementById(`view-${t}`);
+        const btn = document.getElementById(`tab-${t}`);
+        if (t === tab) {
+          view.classList.remove("hidden");
+          btn.className = "px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 bg-[var(--primary)] text-[var(--primary-foreground)]";
+        } else {
+          view.classList.add("hidden");
+          btn.className = "px-3.5 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] hover:opacity-80";
+        }
+      });
+
+      if (tab === "apuracao") {
+        renderApuracaoTable();
+        renderInvestigationPanel();
+      } else if (tab === "admin") {
+        document.getElementById("adminSectorSelect").value = activeSectorId;
+        renderAdminLocais();
+      } else if (tab === "matriz") {
+        renderFullMatrix();
+      }
+    }
+
+    function handleSectorChange(sectorId) {
+      activeSectorId = Number(sectorId);
+      document.getElementById("globalSectorSelect").value = activeSectorId;
+      const sector = getSectorById(activeSectorId);
+      document.getElementById("mobileSectorBadge").textContent = sector.nome;
+
+      populateMobileLocaisDropdown();
+      renderStep2Categories();
+      renderStep2Options();
+      updateStep3Summary();
+
+      if (currentTab === "admin") {
+        document.getElementById("adminSectorSelect").value = activeSectorId;
+        renderAdminLocais();
+      }
+    }
+
+    function populateMobileLocaisDropdown() {
+      const select = document.getElementById("formLocalSelect");
+      const locais = (locaisPorSetor[activeSectorId] || []).filter(l => l.ativo);
+      select.innerHTML = "";
+      if (locais.length === 0) {
+        select.innerHTML = `<option value="">(Nenhum local ativo - cadastre na aba Admin)</option>`;
+        return;
+      }
+      locais.forEach(l => {
+        select.innerHTML += `<option value="${l.nome}">${l.nome}</option>`;
+      });
+    }
+
+    // =========================================================================
+    // 7. FLUXO MOBILE EM 3 PASSOS (CASCATA TOQUE 1 -> TOQUE 2)
+    // =========================================================================
+    function goToStep(step) {
+      currentStep = step;
+      [1, 2, 3].forEach(s => {
+        const panel = document.getElementById(`mobile-step-${s}`);
+        const circle = document.getElementById(`stepCircle${s}`);
+        const btn = document.getElementById(`stepBtn${s}`);
+        if (s === step) {
+          panel.classList.remove("hidden");
+          circle.className = "w-5 h-5 rounded-full flex items-center justify-center text-xs bg-[var(--primary)] text-[var(--primary-foreground)] font-bold";
+          btn.className = "flex items-center gap-1.5 text-left text-[var(--foreground)] font-bold";
+        } else if (s < step) {
+          panel.classList.add("hidden");
+          circle.className = "w-5 h-5 rounded-full flex items-center justify-center text-xs bg-emerald-500/20 text-emerald-500 font-bold";
+          btn.className = "flex items-center gap-1.5 text-left text-[var(--muted-foreground)]";
+        } else {
+          panel.classList.add("hidden");
+          circle.className = "w-5 h-5 rounded-full flex items-center justify-center text-xs bg-[var(--card)] border border-[var(--border)] text-[var(--muted-foreground)]";
+          btn.className = "flex items-center gap-1.5 text-left text-[var(--muted-foreground)]";
+        }
+      });
+
+      if (step === 2) {
+        renderStep2Categories();
+        renderStep2Options();
+      } else if (step === 3) {
+        updateStep3Summary();
+      }
+    }
+
+    function renderStep2Categories() {
+      const grid = document.getElementById("categoryButtonsGrid");
+      grid.innerHTML = "";
+      CATEGORIAS_NUCLEARES.forEach(cat => {
+        const isSelected = cat.id === selectedCategoryId;
+        const sector = getSectorById(activeSectorId);
+        const espCount = (sector.especificos[cat.id] || []).length;
+        const totalCount = cat.nucleares.length + espCount;
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.onclick = () => {
+          selectedCategoryId = cat.id;
+          // Default select first nuclear option of this category
+          selectedOption = { titulo: cat.nucleares[0], origem: "NUCLEAR" };
+          renderStep2Categories();
+          renderStep2Options();
+        };
+        btn.className = isSelected
+          ? "p-2.5 rounded-lg border-2 border-[var(--primary)] bg-[var(--primary)]/10 text-left transition flex items-start justify-between gap-2"
+          : "p-2.5 rounded-lg border border-[var(--border)] bg-[var(--background)] hover:border-[var(--primary)]/50 text-left transition flex items-start justify-between gap-2";
+
+        btn.innerHTML = `
+          <div class="text-xs font-semibold leading-snug">
+            <span class="mr-1">${cat.icone}</span>${cat.nome}
+          </div>
+          <span class="px-1.5 py-0.5 rounded text-xs font-mono bg-[var(--card)] border border-[var(--border)] shrink-0">${totalCount}</span>
+        `;
+        grid.appendChild(btn);
+      });
+    }
+
+    function renderStep2Options() {
+      const cat = getCategoryById(selectedCategoryId);
+      const sector = getSectorById(activeSectorId);
+      const especificos = sector.especificos[cat.id] || [];
+      const container = document.getElementById("optionsListContainer");
+
+      document.getElementById("toque2CountBadge").textContent =
+        `${cat.nucleares.length} Nucleares + ${especificos.length} Específicas do Setor`;
+
+      container.innerHTML = "";
+
+      const allOptions = [
+        ...cat.nucleares.map(t => ({ titulo: t, origem: "NUCLEAR" })),
+        ...especificos.map(t => ({ titulo: t, origem: "ESPECIFICO" }))
+      ];
+
+      // Ensure current selectedOption exists in list
+      if (!allOptions.some(o => o.titulo === selectedOption.titulo)) {
+        selectedOption = allOptions[0];
+      }
+
+      allOptions.forEach(opt => {
+        const isSel = opt.titulo === selectedOption.titulo && opt.origem === selectedOption.origem;
+        const row = document.createElement("button");
+        row.type = "button";
+        row.onclick = () => {
+          selectedOption = opt;
+          renderStep2Options();
+        };
+        row.className = isSel
+          ? "w-full p-2.5 rounded-lg border-2 border-[var(--primary)] bg-[var(--primary)]/10 text-left flex items-center justify-between gap-2 text-xs font-semibold"
+          : "w-full p-2 rounded-lg border border-[var(--border)] bg-[var(--background)] hover:border-[var(--primary)]/40 text-left flex items-center justify-between gap-2 text-xs";
+
+        const badgeHtml = opt.origem === "NUCLEAR"
+          ? `<span class="px-1.5 py-0.5 rounded text-xs font-semibold bg-sky-500/15 text-sky-400 border border-sky-500/30 shrink-0">[Nuclear]</span>`
+          : `<span class="px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0">[Específico]</span>`;
+
+        row.innerHTML = `
+          <div class="flex items-center gap-2">
+            ${badgeHtml}
+            <span>${opt.titulo}</span>
+          </div>
+          <span class="text-xs">${isSel ? "●" : "○"}</span>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function addSimulatedEvidence(tipo) {
+      const id = currentEvidences.length + 1;
+      currentEvidences.push({
+        tipo,
+        nome: `${tipo.toLowerCase()}_evidencia_0${id}.jpg`
+      });
+      renderEvidenceList();
+      updateStep3Summary();
+    }
+
+    function renderEvidenceList() {
+      const el = document.getElementById("evidenceListPreview");
+      if (currentEvidences.length === 0) {
+        el.innerHTML = `<p class="text-xs text-[var(--muted-foreground)]">Nenhum anexo adicionado ainda.</p>`;
+        return;
+      }
+      el.innerHTML = currentEvidences.map((ev, idx) => `
+        <div class="flex items-center justify-between px-3 py-1.5 rounded bg-[var(--background)] border border-[var(--border)] text-xs">
+          <span>📎 <strong>[${ev.tipo}]</strong> ${ev.nome}</span>
+          <button onclick="removeEvidence(${idx})" class="text-rose-400 hover:underline text-xs">Remover</button>
+        </div>
+      `).join("");
+    }
+
+    function removeEvidence(idx) {
+      currentEvidences.splice(idx, 1);
+      renderEvidenceList();
+      updateStep3Summary();
+    }
+
+    function updateStep3Summary() {
+      const sector = getSectorById(activeSectorId);
+      const cat = getCategoryById(selectedCategoryId);
+      const localNome = document.getElementById("formLocalSelect").value || "Não selecionado";
+      const desc = document.getElementById("formDescricao").value.trim() || "(Sem descrição)";
+      const dataHora = document.getElementById("formDataHora").value;
+
+      document.getElementById("sumSetor").textContent = sector.nome;
+      document.getElementById("sumLocal").textContent = localNome;
+      document.getElementById("sumCat").textContent = cat.nome;
+      document.getElementById("sumOpt").textContent = `[${selectedOption.origem === "NUCLEAR" ? "Nuclear" : "Específico"}] ${selectedOption.titulo}`;
+
+      const badge = document.getElementById("summaryOriginBadge");
+      if (selectedOption.origem === "NUCLEAR") {
+        badge.textContent = "is_global = true ([Nuclear])";
+        badge.className = "px-2 py-0.5 rounded text-xs bg-sky-500/15 text-sky-400 border border-sky-500/30";
+      } else {
+        badge.textContent = `setor_id = ${activeSectorId} ([Específico])`;
+        badge.className = "px-2 py-0.5 rounded text-xs bg-amber-500/15 text-amber-400 border border-amber-500/30";
+      }
+
+      const rawPayload = `${activeSectorId}|${localNome}|${cat.nome}|${selectedOption.titulo}|${desc}|${dataHora}|${currentEvidences.length}`;
+      document.getElementById("sumHash").textContent = generateSha256Hex(rawPayload);
+      renderEvidenceList();
+    }
+
+    function submitOcorrencia() {
+      const sector = getSectorById(activeSectorId);
+      const cat = getCategoryById(selectedCategoryId);
+      const localNome = document.getElementById("formLocalSelect").value;
+      const descricao = document.getElementById("formDescricao").value.trim();
+      const acoesTomadas = document.getElementById("formAcoesTomadas").value.trim();
+      const conclusaoAgente = document.getElementById("formConclusaoAgente").value.trim();
+      const dataHora = document.getElementById("formDataHora").value || "2026-11-11 07:05";
+
+      if (!localNome) {
+        showMobileFeedback("Selecione um Local cadastrado antes de enviar.", true);
+        return;
+      }
+      if (!descricao) {
+        showMobileFeedback("Preencha o campo Descrição Detalhada do Fato no Passo 2.", true);
+        goToStep(2);
+        return;
+      }
+
+      const seq = ocorrenciasDB.length + offlineQueue.length + 1010;
+      const protocolo = `OCR-2026-${seq}`;
+      const hash = document.getElementById("sumHash").textContent;
+
+      const novaOcorrencia = {
+        id: `ocr-${Date.now()}`,
+        protocolo,
+        setorId: activeSectorId,
+        setorNome: sector.nome,
+        localNome,
+        categoriaId: selectedCategoryId,
+        categoriaNuclear: cat.nome,
+        opcaoEspecifica: selectedOption.titulo,
+        origemOpcao: selectedOption.origem,
+        descricao,
+        acoesTomadas: acoesTomadas || "Registrado e comunicado à supervisão.",
+        conclusaoAgente: conclusaoAgente || "Aguardando análise da equipe de apuração.",
+        dataHoraFato: dataHora.replace("T", " "),
+        gps: document.getElementById("formGpsInput").value,
+        hashIntegridade: hash,
+        evidencias: [...currentEvidences],
+        apuracao: {
+          status: "Não Iniciada",
+          responsavel: "Não atribuído",
+          analiseTexto: "",
+          conclusaoFinal: null,
+          updatedAt: "Agora mesmo"
+        }
+      };
+
+      if (isOnline) {
+        ocorrenciasDB.unshift(novaOcorrencia);
+        selectedOcorrenciaId = novaOcorrencia.id;
+        showMobileFeedback(`✓ Protocolo ${protocolo} registrado e sincronizado com a Central de Apuração!`, false);
+      } else {
+        offlineQueue.push(novaOcorrencia);
+        showMobileFeedback(`⚡ Sem sinal: Protocolo ${protocolo} salvo no banco local (Dexie.js) aguardando sincronização.`, false);
+      }
+
+      // Reset form fields
+      document.getElementById("formDescricao").value = "";
+      document.getElementById("formAcoesTomadas").value = "";
+      document.getElementById("formConclusaoAgente").value = "";
+      currentEvidences = [];
+      updateCounters();
+      goToStep(1);
+    }
+
+    function showMobileFeedback(msg, isError) {
+      const box = document.getElementById("mobileFeedback");
+      box.classList.remove("hidden");
+      box.className = isError
+        ? "p-3 rounded-lg text-xs font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30"
+        : "p-3 rounded-lg text-xs font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30";
+      box.textContent = msg;
+      setTimeout(() => box.classList.add("hidden"), 4500);
+    }
+
+    // =========================================================================
+    // 8. SIMULADOR DE MODO OFFLINE (DEXIE.JS) E CASOS DE TESTE
+    // =========================================================================
+    function toggleNetworkMode() {
+      isOnline = !isOnline;
+      const dot = document.getElementById("networkDot");
+      const label = document.getElementById("networkLabel");
+      const mobileBadge = document.getElementById("mobileSyncBadge");
+
+      if (isOnline) {
+        dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500";
+        label.textContent = "ONLINE (Sincronizado)";
+        mobileBadge.textContent = "● Online";
+        mobileBadge.className = "px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/15 text-emerald-500";
+        if (offlineQueue.length > 0) {
+          syncOfflineQueue();
+        }
+      } else {
+        dot.className = "w-2.5 h-2.5 rounded-full bg-amber-500";
+        label.textContent = "OFFLINE (Subsolo / Sem Rede)";
+        mobileBadge.textContent = "⚡ Offline (Dexie.js)";
+        mobileBadge.className = "px-2 py-0.5 rounded text-xs font-medium bg-amber-500/15 text-amber-500";
+      }
+      updateCounters();
+    }
+
+    function syncOfflineQueue() {
+      if (offlineQueue.length === 0) return;
+      const count = offlineQueue.length;
+      while (offlineQueue.length > 0) {
+        const item = offlineQueue.shift();
+        ocorrenciasDB.unshift(item);
+        selectedOcorrenciaId = item.id;
+      }
+      isOnline = true;
+      document.getElementById("networkDot").className = "w-2.5 h-2.5 rounded-full bg-emerald-500";
+      document.getElementById("networkLabel").textContent = "ONLINE (Sincronizado)";
+      document.getElementById("mobileSyncBadge").textContent = "● Online";
+      document.getElementById("mobileSyncBadge").className = "px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/15 text-emerald-500";
+      updateCounters();
+      showMobileFeedback(`✓ ${count} ocorrência(s) da fila offline sincronizada(s) com o PostgreSQL!`, false);
+    }
+
+    function updateCounters() {
+      document.getElementById("badgeTotalOcorrencias").textContent = ocorrenciasDB.length;
+      const banner = document.getElementById("offlineQueueBanner");
+      if (offlineQueue.length > 0) {
+        banner.classList.remove("hidden");
+        document.getElementById("offlineCountText").textContent = `${offlineQueue.length} registro(s) aguardando sinal`;
+      } else {
+        banner.classList.add("hidden");
+      }
+    }
+
+    function renderTestScenarios() {
+      const list = document.getElementById("testScenariosList");
+      list.innerHTML = CASOS_TESTE_CONVERSA.map((c, idx) => `
+        <button onclick="loadTestScenarioIntoMobile(${idx})" class="w-full p-2.5 rounded-lg border border-[var(--border)] bg-[var(--background)] hover:border-[var(--primary)] text-left transition space-y-1">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-bold">${c.titulo}</span>
+            <span class="px-1.5 py-0.5 rounded text-xs ${c.origem === 'NUCLEAR' ? 'bg-sky-500/15 text-sky-400' : 'bg-amber-500/15 text-amber-400'}">[${c.origem === 'NUCLEAR' ? 'Nuclear' : 'Específico'}]</span>
+          </div>
+          <div class="text-xs text-[var(--muted-foreground)] truncate">
+            Toque 1: Cat. ${c.categoriaId} ➔ Toque 2: ${c.opcao}
+          </div>
+        </button>
+      `).join("");
+    }
+
+    function loadTestScenarioIntoMobile(idx) {
+      const c = CASOS_TESTE_CONVERSA[idx];
+      handleSectorChange(c.setorId);
+      document.getElementById("formLocalSelect").value = c.local;
+      selectedCategoryId = c.categoriaId;
+      selectedOption = { titulo: c.opcao, origem: c.origem };
+      document.getElementById("formDescricao").value = c.descricao;
+      document.getElementById("formAcoesTomadas").value = c.acoes;
+      document.getElementById("formConclusaoAgente").value = c.conclusaoAgente;
+      currentEvidences = [{ tipo: "FOTO_LOCAL", nome: "evidencia_campo_01.jpg" }];
+      goToStep(2);
+      showMobileFeedback(`Cenário "${c.titulo}" carregado no formulário! Confira o Toque 1 e Toque 2 acima.`, false);
+    }
+
+    // =========================================================================
+    // 9. CENTRAL DE APURAÇÃO (4 STATUS + REGRA DE CONCLUSÃO OBRIGATÓRIA)
+    // =========================================================================
+    function getStatusBadgeHtml(status) {
+      const styles = {
+        "Não Iniciada": "bg-slate-500/15 text-slate-400 border-slate-500/30",
+        "Em Apuração": "bg-sky-500/15 text-sky-400 border-sky-500/30",
+        "Interrompida": "bg-amber-500/15 text-amber-400 border-amber-500/30",
+        "Concluída": "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+      };
+      return `<span class="px-2 py-0.5 rounded border text-xs font-semibold ${styles[status] || ''}">${status}</span>`;
+    }
+
+    function renderKpis() {
+      const total = ocorrenciasDB.length;
+      const naoIniciadas = ocorrenciasDB.filter(o => o.apuracao.status === "Não Iniciada").length;
+      const emApuracao = ocorrenciasDB.filter(o => o.apuracao.status === "Em Apuração").length;
+      const interrompidas = ocorrenciasDB.filter(o => o.apuracao.status === "Interrompida").length;
+      const concluidas = ocorrenciasDB.filter(o => o.apuracao.status === "Concluída").length;
+      const confirmadas = ocorrenciasDB.filter(o => o.apuracao.conclusaoFinal === "Infração Confirmada").length;
+
+      const kpis = [
+        { label: "Total Registradas", val: total, sub: "14 Setores" },
+        { label: "Não Iniciada", val: naoIniciadas, sub: "Aguardando triagem" },
+        { label: "Em Apuração", val: emApuracao, sub: "Coleta de evidências" },
+        { label: "Interrompida", val: interrompidas, sub: "Aguardando órgãos/perícia" },
+        { label: "Concluída", val: concluidas, sub: "Processo encerrado" },
+        { label: "Infração Confirmada", val: confirmadas, sub: "Das concluídas" }
+      ];
+
+      document.getElementById("kpiGrid").innerHTML = kpis.map(k => `
+        <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-3.5">
+          <div class="text-xs text-[var(--muted-foreground)]">${k.label}</div>
+          <div class="text-xl font-bold mt-1 tabular-nums">${k.val}</div>
+          <div class="text-xs text-[var(--muted-foreground)] mt-0.5">${k.sub}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderApuracaoTable() {
+      renderKpis();
+      const statusFilter = document.getElementById("filterStatus").value;
+      const setorFilter = document.getElementById("filterSetor").value;
+      const origemFilter = document.getElementById("filterOrigem").value;
+
+      const filtered = ocorrenciasDB.filter(o => {
+        if (statusFilter !== "ALL" && o.apuracao.status !== statusFilter) return false;
+        if (setorFilter !== "ALL" && String(o.setorId) !== String(setorFilter)) return false;
+        if (origemFilter !== "ALL" && o.origemOpcao !== origemFilter) return false;
+        return true;
+      });
+
+      const container = document.getElementById("ocorrenciasListContainer");
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="p-6 text-center text-xs text-[var(--muted-foreground)]">Nenhuma ocorrência encontrada para os filtros selecionados.</div>`;
+        return;
+      }
+
+      container.innerHTML = filtered.map(o => {
+        const isSelected = o.id === selectedOcorrenciaId;
+        return `
+          <div onclick="selectOcorrenciaForAudit('${o.id}')" class="p-3.5 cursor-pointer transition ${isSelected ? 'bg-[var(--primary)]/10 border-l-4 border-l-[var(--primary)]' : 'hover:bg-[var(--background)]'}">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-xs font-bold">${o.protocolo}</span>
+                <span class="text-xs text-[var(--muted-foreground)]">• ${o.localNome}</span>
+              </div>
+              ${getStatusBadgeHtml(o.apuracao.status)}
+            </div>
+            <div class="text-xs font-semibold mt-1.5">
+              <span class="${o.origemOpcao === 'NUCLEAR' ? 'text-sky-400' : 'text-amber-400'}">[${o.origemOpcao === 'NUCLEAR' ? 'Nuclear' : 'Específico'}]</span>
+              ${o.opcaoEspecifica}
+            </div>
+            <div class="text-xs text-[var(--muted-foreground)] mt-1 flex items-center justify-between">
+              <span class="truncate max-w-[320px]">${o.setorNome}</span>
+              ${o.apuracao.conclusaoFinal ? `<span class="font-semibold text-[var(--foreground)]">✓ ${o.apuracao.conclusaoFinal}</span>` : ''}
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function selectOcorrenciaForAudit(id) {
+      selectedOcorrenciaId = id;
+      renderApuracaoTable();
+      renderInvestigationPanel();
+    }
+
+    function renderInvestigationPanel() {
+      const panel = document.getElementById("investigationPanel");
+      const ocr = ocorrenciasDB.find(o => o.id === selectedOcorrenciaId) || ocorrenciasDB[0];
+      if (!ocr) {
+        panel.innerHTML = `<p class="text-xs text-[var(--muted-foreground)]">Selecione uma ocorrência na lista ao lado.</p>`;
+        return;
+      }
+      selectedOcorrenciaId = ocr.id;
+
+      panel.innerHTML = `
+        <div class="flex items-center justify-between border-b border-[var(--card-border)] pb-3">
+          <div>
+            <span class="text-xs text-[var(--muted-foreground)] block">Dossiê de Investigação & Auditoria</span>
+            <h3 class="text-sm font-bold font-mono">${ocr.protocolo}</h3>
+          </div>
+          ${getStatusBadgeHtml(ocr.apuracao.status)}
+        </div>
+
+        <div class="space-y-2 text-xs bg-[var(--background)] p-3 rounded-lg border border-[var(--card-border)]">
+          <div><strong class="text-[var(--muted-foreground)]">Setor:</strong> ${ocr.setorNome}</div>
+          <div><strong class="text-[var(--muted-foreground)]">Local (Fixo Admin):</strong> ${ocr.localNome}</div>
+          <div><strong class="text-[var(--muted-foreground)]">Toque 1 (Categoria):</strong> ${ocr.categoriaNuclear}</div>
+          <div><strong class="text-[var(--muted-foreground)]">Toque 2 (Tipificação):</strong> [${ocr.origemOpcao}] ${ocr.opcaoEspecifica}</div>
+          <div class="pt-1 border-t border-[var(--card-border)]">
+            <strong class="text-[var(--muted-foreground)] block">Descrição do Vigilante:</strong>
+            <p class="mt-0.5">${ocr.descricao}</p>
+          </div>
+          <div>
+            <strong class="text-[var(--muted-foreground)] block">Ações Tomadas:</strong>
+            <p class="mt-0.5">${ocr.acoesTomadas}</p>
+          </div>
+          <div>
+            <strong class="text-[var(--muted-foreground)] block">Conclusão do Agente:</strong>
+            <p class="mt-0.5">${ocr.conclusaoAgente || "-"}</p>
+          </div>
+          <div class="pt-1 border-t border-[var(--card-border)]">
+            <strong class="text-[var(--muted-foreground)] block">Hash SHA-256 de Integridade:</strong>
+            <code class="font-mono text-xs break-all text-[var(--code-foreground)]">${ocr.hashIntegridade}</code>
+          </div>
+        </div>
+
+        <!-- Formulário da Equipe de Apuração -->
+        <div class="space-y-3 pt-2">
+          <div>
+            <label class="text-xs font-semibold block mb-1">Status da Investigação (4 Status Oficiais) *</label>
+            <select id="auditStatusSelect" onchange="toggleAuditConclusaoRequirement()" class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg px-3 py-2 text-xs font-semibold">
+              <option value="Não Iniciada" ${ocr.apuracao.status === 'Não Iniciada' ? 'selected' : ''}>1. Não Iniciada (Aguardando triagem)</option>
+              <option value="Em Apuração" ${ocr.apuracao.status === 'Em Apuração' ? 'selected' : ''}>2. Em Apuração (Investigação em andamento)</option>
+              <option value="Interrompida" ${ocr.apuracao.status === 'Interrompida' ? 'selected' : ''}>3. Interrompida (Força maior / Aguardando órgãos)</option>
+              <option value="Concluída" ${ocr.apuracao.status === 'Concluída' ? 'selected' : ''}>4. Concluída (Exige Conclusão de Apuração)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="text-xs font-semibold block mb-1">Relatório / Análise da Apuração (Texto Livre)</label>
+            <textarea id="auditAnaliseText" rows="3" placeholder="Descreva a análise das imagens de CFTV, oitivas, laudos policiais ou medidas tomadas..." class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg p-2.5 text-xs">${ocr.apuracao.analiseTexto || ''}</textarea>
+          </div>
+
+          <div id="auditConclusaoBox">
+            <label class="text-xs font-semibold block mb-1">Conclusão Final de Apuração <span id="conclusaoReqTag" class="text-rose-400">(Obrigatório ao Concluir)</span></label>
+            <select id="auditConclusaoSelect" class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg px-3 py-2 text-xs">
+              <option value="">-- Selecione o parecer final --</option>
+              <option value="Infração Confirmada" ${ocr.apuracao.conclusaoFinal === 'Infração Confirmada' ? 'selected' : ''}>Infração Confirmada</option>
+              <option value="Infração não Confirmada" ${ocr.apuracao.conclusaoFinal === 'Infração não Confirmada' ? 'selected' : ''}>Infração não Confirmada</option>
+              <option value="Sem Conclusão" ${ocr.apuracao.conclusaoFinal === 'Sem Conclusão' ? 'selected' : ''}>Sem Conclusão (Inconclusiva)</option>
+            </select>
+          </div>
+
+          <div id="auditFeedbackMsg" class="hidden p-2.5 rounded-lg text-xs font-semibold"></div>
+
+          <button onclick="saveAuditChanges('${ocr.id}')" class="w-full py-2.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-bold hover:opacity-90">
+            💾 Salvar Status e Parecer da Apuração
+          </button>
+        </div>
+      `;
+    }
+
+    function toggleAuditConclusaoRequirement() {
+      const status = document.getElementById("auditStatusSelect").value;
+      const tag = document.getElementById("conclusaoReqTag");
+      if (status === "Concluída") {
+        tag.textContent = "(Obrigatório para encerrar *)";
+        tag.className = "text-rose-400 font-bold";
+      } else {
+        tag.textContent = "(Exigido apenas quando Concluída)";
+        tag.className = "text-[var(--muted-foreground)]";
+      }
+    }
+
+    function saveAuditChanges(id) {
+      const ocr = ocorrenciasDB.find(o => o.id === id);
+      if (!ocr) return;
+
+      const novoStatus = document.getElementById("auditStatusSelect").value;
+      const novaAnalise = document.getElementById("auditAnaliseText").value.trim();
+      const novaConclusao = document.getElementById("auditConclusaoSelect").value;
+      const msgBox = document.getElementById("auditFeedbackMsg");
+
+      // Regra de negócio estrita: Status "Concluída" exige "Conclusão de Apuração"
+      if (novoStatus === "Concluída" && !novaConclusao) {
+        msgBox.classList.remove("hidden");
+        msgBox.className = "p-2.5 rounded-lg text-xs font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30";
+        msgBox.textContent = "⚠️ Regra de Negócio: Para marcar como 'Concluída', é obrigatório selecionar a Conclusão de Apuração (Infração Confirmada, Não Confirmada ou Sem Conclusão).";
+        return;
+      }
+
+      ocr.apuracao.status = novoStatus;
+      ocr.apuracao.analiseTexto = novaAnalise;
+      ocr.apuracao.conclusaoFinal = novoStatus === "Concluída" ? novaConclusao : (novaConclusao || null);
+
+      renderApuracaoTable();
+      renderInvestigationPanel();
+
+      const updatedMsg = document.getElementById("auditFeedbackMsg");
+      updatedMsg.classList.remove("hidden");
+      updatedMsg.className = "p-2.5 rounded-lg text-xs font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30";
+      updatedMsg.textContent = `✓ Apuração do protocolo ${ocr.protocolo} atualizada para "${novoStatus}"!`;
+    }
+
+    // =========================================================================
+    // 10. ADMINISTRAÇÃO DE LOCAIS POR SETOR/CONTRATO
+    // =========================================================================
+    function renderAdminLocais() {
+      const sectorId = Number(document.getElementById("adminSectorSelect").value);
+      const locais = locaisPorSetor[sectorId] || [];
+      document.getElementById("adminLocaisCount").textContent = `${locais.filter(l => l.ativo).length} ativos de ${locais.length} cadastrados`;
+
+      const list = document.getElementById("adminLocaisList");
+      list.innerHTML = locais.map((l, idx) => `
+        <div class="flex items-center justify-between p-3 rounded-lg bg-[var(--background)] border border-[var(--border)] text-xs">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full ${l.ativo ? 'bg-emerald-500' : 'bg-rose-500'}"></span>
+            <span class="font-semibold ${l.ativo ? '' : 'line-through text-[var(--muted-foreground)]'}">${l.nome}</span>
+          </div>
+          <button onclick="toggleAdminLocal(${sectorId}, ${idx})" class="px-2.5 py-1 rounded border border-[var(--border)] text-xs font-medium hover:bg-[var(--card)]">
+            ${l.ativo ? 'Desativar' : 'Reativar'}
+          </button>
+        </div>
+      `).join("");
+    }
+
+    function addAdminLocal() {
+      const sectorId = Number(document.getElementById("adminSectorSelect").value);
+      const input = document.getElementById("adminNewLocalName");
+      const nome = input.value.trim();
+      if (!nome) return;
+
+      locaisPorSetor[sectorId].push({
+        id: `loc-${sectorId}-${Date.now()}`,
+        nome,
+        ativo: true
+      });
+      input.value = "";
+      renderAdminLocais();
+      if (sectorId === activeSectorId) {
+        populateMobileLocaisDropdown();
+      }
+    }
+
+    function toggleAdminLocal(sectorId, idx) {
+      locaisPorSetor[sectorId][idx].ativo = !locaisPorSetor[sectorId][idx].ativo;
+      renderAdminLocais();
+      if (sectorId === activeSectorId) {
+        populateMobileLocaisDropdown();
+      }
+    }
+
+    // =========================================================================
+    // 11. EXPLORADOR DA MATRIZ COMPLETA (14 SETORES x 6 CATEGORIAS)
+    // =========================================================================
+    function renderFullMatrix() {
+      const query = (document.getElementById("matrixSearchInput").value || "").toLowerCase().trim();
+      const container = document.getElementById("fullMatrixContainer");
+
+      container.innerHTML = SETORES.map(setor => {
+        let categoriesHtml = "";
+        let totalMatchesInSector = 0;
+
+        CATEGORIAS_NUCLEARES.forEach(cat => {
+          const nucs = cat.nucleares.filter(t => !query || t.toLowerCase().includes(query) || setor.nome.toLowerCase().includes(query));
+          const esps = (setor.especificos[cat.id] || []).filter(t => !query || t.toLowerCase().includes(query) || setor.nome.toLowerCase().includes(query));
+
+          if (nucs.length === 0 && esps.length === 0) return;
+          totalMatchesInSector += nucs.length + esps.length;
+
+          categoriesHtml += `
+            <div class="p-2.5 rounded-lg bg-[var(--background)] border border-[var(--card-border)] space-y-1.5">
+              <div class="text-xs font-bold">${cat.icone} ${cat.nome}</div>
+              <div class="space-y-1 pl-1">
+                ${nucs.map(n => `
+                  <div class="text-xs flex items-start gap-1.5">
+                    <span class="text-sky-400 font-mono shrink-0">[Nuclear]</span>
+                    <span class="text-[var(--muted-foreground)]">${n}</span>
+                  </div>
+                `).join("")}
+                ${esps.map(e => `
+                  <div class="text-xs flex items-start gap-1.5">
+                    <span class="text-amber-400 font-mono font-semibold shrink-0">[Específico]</span>
+                    <span class="font-medium">${e}</span>
+                  </div>
+                `).join("")}
+              </div>
+            </div>
+          `;
+        });
+
+        if (totalMatchesInSector === 0) return "";
+
+        return `
+          <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 space-y-3">
+            <div class="flex items-center justify-between border-b border-[var(--card-border)] pb-2">
+              <h3 class="text-sm font-bold">${setor.nome}</h3>
+              <button onclick="handleSectorChange(${setor.id}); switchTab('mobile');" class="px-2.5 py-1 rounded bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-semibold">
+                Testar no App ➔
+              </button>
+            </div>
+            <div class="space-y-2 max-h-96 overflow-y-auto pr-1">
+              ${categoriesHtml}
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    // Boot
+    window.addEventListener("DOMContentLoaded", initApp);
+  </script>
+</body>
+</html>
