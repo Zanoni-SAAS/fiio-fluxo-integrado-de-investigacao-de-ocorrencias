@@ -1200,8 +1200,49 @@
       const setor = getSectorById(c.setorId);
       const payloadStr = `${c.setorId}|${c.local}|${cat.nome}|${c.opcao}|${c.descricao}`;
       const protocolo = `OCR-2026-${String(1000 + seq)}`;
+      const id = `ocr-${seq}-${Date.now()}`;
+      const isConcluida = c.statusApuracao === "Concluída";
+      const formalNome = isConcluida ? `Relatorio_Apuracao_Formal_${protocolo}.pdf` : null;
+      const formalHash = isConcluida ? generateSha256Hex(`FORMAL_PDF_${protocolo}_${c.analise}`) : null;
+
+      const initialAuditLogs = [
+        {
+          id: `log-read-${seq}`,
+          ocorrencia_id: id,
+          usuario_id: "usr-inv-9001",
+          perfil_usuario: "INVESTIGADOR",
+          tipo_evento: "READ_OCORRENCIA",
+          detalhes_alteracao: { visualizacao_completa: true },
+          geo_latitude: -23.55052,
+          geo_longitude: -46.633308,
+          ip_origem: "10.24.18.92",
+          dispositivo_info: { platform: "Web/PWA Desktop", appVersion: "1.0.0" },
+          created_at: "11/11/2026 06:40:12"
+        }
+      ];
+
+      if (c.statusApuracao !== "Não Iniciada") {
+        initialAuditLogs.unshift({
+          id: `log-upd-${seq}`,
+          ocorrencia_id: id,
+          usuario_id: "usr-inv-9001",
+          perfil_usuario: "INVESTIGADOR",
+          tipo_evento: "UPDATE_APURACAO",
+          detalhes_alteracao: {
+            status: { antes: "Não Iniciada", depois: c.statusApuracao },
+            ...(c.conclusaoFinal ? { conclusao_final: { antes: null, depois: c.conclusaoFinal } } : {}),
+            ...(formalNome ? { apuracao_formal_nome: { antes: null, depois: formalNome }, apuracao_formal_hash: { antes: null, depois: formalHash } } : {})
+          },
+          geo_latitude: -23.55052,
+          geo_longitude: -46.633308,
+          ip_origem: "10.24.18.92",
+          dispositivo_info: { platform: "Web/PWA Desktop", appVersion: "1.0.0" },
+          created_at: "11/11/2026 06:55:00"
+        });
+      }
+
       ocorrenciasDB.push({
-        id: `ocr-${seq}-${Date.now()}`,
+        id,
         protocolo,
         setorId: c.setorId,
         setorNome: setor.nome,
@@ -1217,11 +1258,16 @@
         gps: "-23.550520, -46.633308",
         hashIntegridade: generateSha256Hex(payloadStr),
         evidencias: [{ tipo: "FOTO_LOCAL", nome: `evidencia_${protocolo}.jpg` }],
+        auditLogs: initialAuditLogs,
         apuracao: {
           status: c.statusApuracao,
           responsavel: "Auditor Marcos (CFTV/Segurança)",
+          responsavel_id: "usr-inv-9001",
           analiseTexto: c.analise || "",
           conclusaoFinal: c.conclusaoFinal,
+          apuracao_formal_nome: formalNome,
+          apuracao_formal_hash: formalHash,
+          apuracao_formal_uploaded_at: isConcluida ? "11/11/2026 06:55" : null,
           updatedAt: "11/11/2026 06:55"
         }
       });
@@ -1700,6 +1746,28 @@
 
     function selectOcorrenciaForAudit(id) {
       selectedOcorrenciaId = id;
+      const ocr = ocorrenciasDB.find(o => o.id === id);
+      if (ocr) {
+        if (!ocr.auditLogs) ocr.auditLogs = [];
+        const role = document.getElementById("globalRoleSelect")?.value || "INVESTIGADOR";
+        ocr.auditLogs.unshift({
+          id: `log-read-${Date.now()}`,
+          ocorrencia_id: ocr.id,
+          usuario_id: role === "ADMIN" ? "usr-adm-0001" : "usr-inv-9001",
+          perfil_usuario: role,
+          tipo_evento: "READ_OCORRENCIA",
+          detalhes_alteracao: { visualizacao_completa: true },
+          geo_latitude: -23.55052,
+          geo_longitude: -46.633308,
+          ip_origem: "127.0.0.1",
+          dispositivo_info: {
+            platform: navigator.platform || "Web/PWA",
+            userAgent: (navigator.userAgent || "Browser").slice(0, 48),
+            appVersion: "1.0.0"
+          },
+          created_at: new Date().toLocaleString("pt-BR")
+        });
+      }
       renderApuracaoTable();
       renderInvestigationPanel();
     }
@@ -1712,17 +1780,56 @@
         return;
       }
       selectedOcorrenciaId = ocr.id;
+      if (!ocr.auditLogs) ocr.auditLogs = [];
+
+      const logsHtml = ocr.auditLogs.map(log => {
+        const isUpdate = log.tipo_evento === "UPDATE_APURACAO";
+        const badgeStyle = isUpdate
+          ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+          : "bg-sky-500/15 text-sky-400 border-sky-500/30";
+
+        let diffHtml = "";
+        if (isUpdate && log.detalhes_alteracao) {
+          diffHtml = Object.entries(log.detalhes_alteracao).map(([campo, val]) => `
+            <div class="text-xs font-mono bg-[var(--card)] px-2 py-1 rounded border border-[var(--border)] mt-1">
+              <span class="font-bold text-[var(--foreground)]">${campo}:</span>
+              <span class="text-rose-400 line-through">${val?.antes ?? "null"}</span> ➔
+              <span class="text-emerald-400 font-semibold">${val?.depois ?? "null"}</span>
+            </div>
+          `).join("");
+        } else {
+          diffHtml = `<div class="text-xs text-[var(--muted-foreground)] mt-0.5">Acesso de leitura integral ao dossiê registrado na cadeia de custódia.</div>`;
+        }
+
+        return `
+          <div class="p-2.5 rounded-lg bg-[var(--background)] border border-[var(--card-border)] space-y-1 text-xs">
+            <div class="flex items-center justify-between gap-2">
+              <span class="px-1.5 py-0.5 rounded border font-mono text-xs font-bold ${badgeStyle}">${log.tipo_evento}</span>
+              <span class="font-mono text-xs text-[var(--muted-foreground)]">${log.created_at}</span>
+            </div>
+            <div class="text-xs text-[var(--muted-foreground)] flex flex-wrap gap-x-3 gap-y-0.5">
+              <span>👤 <strong>${log.perfil_usuario}</strong> (${log.usuario_id})</span>
+              <span>💻 ${log.dispositivo_info?.platform || "Web/PWA"}</span>
+              <span>📍 GPS: ${log.geo_latitude ?? "-23.5505"}, ${log.geo_longitude ?? "-46.6333"}</span>
+            </div>
+            ${diffHtml}
+          </div>
+        `;
+      }).join("");
 
       panel.innerHTML = `
         <div class="flex items-center justify-between border-b border-[var(--card-border)] pb-3">
           <div>
-            <span class="text-xs text-[var(--muted-foreground)] block">Dossiê de Investigação & Auditoria</span>
+            <span class="text-xs text-[var(--muted-foreground)] block">Dossiê de Investigação & Cadeia de Custódia</span>
             <h3 class="text-sm font-bold font-mono">${ocr.protocolo}</h3>
           </div>
           ${getStatusBadgeHtml(ocr.apuracao.status)}
         </div>
 
         <div class="space-y-2 text-xs bg-[var(--background)] p-3 rounded-lg border border-[var(--card-border)]">
+          <div class="flex items-center justify-between">
+            <span class="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-semibold text-xs">🔒 Relato Original Imutável (Trigger SQL Ativa)</span>
+          </div>
           <div><strong class="text-[var(--muted-foreground)]">Setor:</strong> ${ocr.setorNome}</div>
           <div><strong class="text-[var(--muted-foreground)]">Local (Fixo Admin):</strong> ${ocr.localNome}</div>
           <div><strong class="text-[var(--muted-foreground)]">Toque 1 (Categoria):</strong> ${ocr.categoriaNuclear}</div>
@@ -1740,7 +1847,7 @@
             <p class="mt-0.5">${ocr.conclusaoAgente || "-"}</p>
           </div>
           <div class="pt-1 border-t border-[var(--card-border)]">
-            <strong class="text-[var(--muted-foreground)] block">Hash SHA-256 de Integridade:</strong>
+            <strong class="text-[var(--muted-foreground)] block">Hash SHA-256 de Integridade (Campo):</strong>
             <code class="font-mono text-xs break-all text-[var(--code-foreground)]">${ocr.hashIntegridade}</code>
           </div>
         </div>
@@ -1759,7 +1866,7 @@
 
           <div>
             <label class="text-xs font-semibold block mb-1">Relatório / Análise da Apuração (Texto Livre)</label>
-            <textarea id="auditAnaliseText" rows="3" placeholder="Descreva a análise das imagens de CFTV, oitivas, laudos policiais ou medidas tomadas..." class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg p-2.5 text-xs">${ocr.apuracao.analiseTexto || ''}</textarea>
+            <textarea id="auditAnaliseText" rows="2" placeholder="Descreva a análise das imagens de CFTV, oitivas, laudos policiais ou medidas tomadas..." class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg p-2.5 text-xs">${ocr.apuracao.analiseTexto || ''}</textarea>
           </div>
 
           <div id="auditConclusaoBox">
@@ -1772,6 +1879,24 @@
             </select>
           </div>
 
+          <!-- Documento Final de Apuração Formal de Ocorrência (com cálculo SHA-256) -->
+          <div class="p-3 rounded-lg bg-[var(--background)] border border-[var(--card-border)] space-y-2 text-xs">
+            <div class="flex items-center justify-between">
+              <label class="font-bold">📎 Anexo de Apuração Formal de Ocorrência (PDF/Doc)</label>
+              <button type="button" onclick="simulateFormalAttachment('${ocr.id}')" class="text-xs text-[var(--link)] underline font-semibold">
+                + Simular Upload de Laudo PDF
+              </button>
+            </div>
+            <input type="file" id="formalFileInput" onchange="handleFormalFileSelect('${ocr.id}', this)" class="w-full text-xs text-[var(--muted-foreground)]" />
+            ${ocr.apuracao.apuracao_formal_nome ? `
+              <div class="p-2 rounded bg-[var(--card)] border border-[var(--border)] space-y-1">
+                <div class="font-semibold text-emerald-400">✓ Arquivo: ${ocr.apuracao.apuracao_formal_nome}</div>
+                <div class="text-[var(--muted-foreground)]">SHA-256 do Arquivo Formal:</div>
+                <code class="block font-mono text-xs break-all text-[var(--code-foreground)]">${ocr.apuracao.apuracao_formal_hash}</code>
+              </div>
+            ` : `<div class="text-[var(--muted-foreground)]">Nenhum documento formal anexado ainda.</div>`}
+          </div>
+
           <div id="auditFeedbackMsg" class="hidden p-2.5 rounded-lg text-xs font-semibold"></div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1781,6 +1906,17 @@
             <button onclick="openDossieModal('${ocr.id}')" class="w-full py-2.5 rounded-lg border border-[var(--border)] bg-[var(--background)] hover:bg-[var(--secondary)] text-xs font-bold">
               📄 Emitir Laudo / Dossiê
             </button>
+          </div>
+        </div>
+
+        <!-- Trilha de Auditoria Append-Only (READ_OCORRENCIA e UPDATE_APURACAO) -->
+        <div class="pt-3 border-t border-[var(--card-border)] space-y-2">
+          <div class="flex items-center justify-between">
+            <h4 class="text-xs font-bold">🛡️ Trilha de Auditoria Imutável (Append-Only)</h4>
+            <span class="px-2 py-0.5 rounded bg-[var(--background)] border border-[var(--border)] font-mono text-xs">${ocr.auditLogs.length} evento(s)</span>
+          </div>
+          <div class="space-y-2 max-h-56 overflow-y-auto pr-1">
+            ${logsHtml}
           </div>
         </div>
       `;
@@ -1796,6 +1932,64 @@
         tag.textContent = "(Exigido apenas quando Concluída)";
         tag.className = "text-[var(--muted-foreground)]";
       }
+    }
+
+    async function handleFormalFileSelect(id, inputEl) {
+      const file = inputEl.files && inputEl.files[0];
+      if (!file) return;
+      let hexHash = generateSha256Hex(`${file.name}|${file.size}|${file.lastModified}`);
+      if (window.crypto && window.crypto.subtle) {
+        try {
+          const buf = await file.arrayBuffer();
+          const digest = await window.crypto.subtle.digest("SHA-256", buf);
+          hexHash = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
+        } catch (_) {}
+      }
+      applyFormalAttachmentToOccurrence(id, file.name, hexHash);
+    }
+
+    function simulateFormalAttachment(id) {
+      const ocr = ocorrenciasDB.find(o => o.id === id);
+      if (!ocr) return;
+      const fileName = `Apuracao_Formal_${ocr.protocolo}_Assinado.pdf`;
+      const hexHash = generateSha256Hex(`${fileName}|${Date.now()}`);
+      applyFormalAttachmentToOccurrence(id, fileName, hexHash);
+    }
+
+    function applyFormalAttachmentToOccurrence(id, fileName, hexHash) {
+      const ocr = ocorrenciasDB.find(o => o.id === id);
+      if (!ocr) return;
+      const oldNome = ocr.apuracao.apuracao_formal_nome ?? null;
+      const oldHash = ocr.apuracao.apuracao_formal_hash ?? null;
+
+      ocr.apuracao.apuracao_formal_nome = fileName;
+      ocr.apuracao.apuracao_formal_hash = hexHash;
+      ocr.apuracao.apuracao_formal_uploaded_at = new Date().toLocaleString("pt-BR");
+
+      const role = document.getElementById("globalRoleSelect")?.value || "INVESTIGADOR";
+      if (!ocr.auditLogs) ocr.auditLogs = [];
+      ocr.auditLogs.unshift({
+        id: `log-upd-${Date.now()}`,
+        ocorrencia_id: ocr.id,
+        usuario_id: role === "ADMIN" ? "usr-adm-0001" : "usr-inv-9001",
+        perfil_usuario: role,
+        tipo_evento: "UPDATE_APURACAO",
+        detalhes_alteracao: {
+          apuracao_formal_nome: { antes: oldNome, depois: fileName },
+          apuracao_formal_hash: { antes: oldHash, depois: hexHash }
+        },
+        geo_latitude: -23.55052,
+        geo_longitude: -46.633308,
+        ip_origem: "127.0.0.1",
+        dispositivo_info: {
+          platform: navigator.platform || "Web/PWA",
+          userAgent: (navigator.userAgent || "Browser").slice(0, 48),
+          appVersion: "1.0.0"
+        },
+        created_at: new Date().toLocaleString("pt-BR")
+      });
+
+      renderInvestigationPanel();
     }
 
     function saveAuditChanges(id) {
@@ -1815,9 +2009,47 @@
         return;
       }
 
+      const oldState = {
+        status: ocr.apuracao.status,
+        analise_texto: ocr.apuracao.analiseTexto || "",
+        conclusao_final: ocr.apuracao.conclusaoFinal || null
+      };
+
+      const finalConclusao = novoStatus === "Concluída" ? novaConclusao : (novaConclusao || null);
+      const diff = {};
+      if (oldState.status !== novoStatus) {
+        diff.status = { antes: oldState.status, depois: novoStatus };
+      }
+      if (oldState.analise_texto !== novaAnalise) {
+        diff.analise_texto = { antes: oldState.analise_texto || null, depois: novaAnalise || null };
+      }
+      if (oldState.conclusao_final !== finalConclusao) {
+        diff.conclusao_final = { antes: oldState.conclusao_final, depois: finalConclusao };
+      }
+
       ocr.apuracao.status = novoStatus;
       ocr.apuracao.analiseTexto = novaAnalise;
-      ocr.apuracao.conclusaoFinal = novoStatus === "Concluída" ? novaConclusao : (novaConclusao || null);
+      ocr.apuracao.conclusaoFinal = finalConclusao;
+
+      const role = document.getElementById("globalRoleSelect")?.value || "INVESTIGADOR";
+      if (!ocr.auditLogs) ocr.auditLogs = [];
+      ocr.auditLogs.unshift({
+        id: `log-upd-${Date.now()}`,
+        ocorrencia_id: ocr.id,
+        usuario_id: role === "ADMIN" ? "usr-adm-0001" : "usr-inv-9001",
+        perfil_usuario: role,
+        tipo_evento: "UPDATE_APURACAO",
+        detalhes_alteracao: diff,
+        geo_latitude: -23.55052,
+        geo_longitude: -46.633308,
+        ip_origem: "127.0.0.1",
+        dispositivo_info: {
+          platform: navigator.platform || "Web/PWA",
+          userAgent: (navigator.userAgent || "Browser").slice(0, 48),
+          appVersion: "1.0.0"
+        },
+        created_at: new Date().toLocaleString("pt-BR")
+      });
 
       renderApuracaoTable();
       renderInvestigationPanel();
@@ -1825,7 +2057,7 @@
       const updatedMsg = document.getElementById("auditFeedbackMsg");
       updatedMsg.classList.remove("hidden");
       updatedMsg.className = "p-2.5 rounded-lg text-xs font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30";
-      updatedMsg.textContent = `✓ Apuração do protocolo ${ocr.protocolo} atualizada para "${novoStatus}"!`;
+      updatedMsg.textContent = `✓ Apuração do protocolo ${ocr.protocolo} atualizada para "${novoStatus}" e gravada na Trilha de Auditoria!`;
     }
 
     // =========================================================================

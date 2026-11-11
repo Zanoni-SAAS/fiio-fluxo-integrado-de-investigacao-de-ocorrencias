@@ -263,9 +263,88 @@ test("9. Servidor REST API FIIO: registro, bloqueio RBAC, validação 422 na apu
     const metrics = await analyticsRes.json();
     assert.equal(metrics.total, 1);
     assert.equal(metrics.taxaConfirmacaoPct, 100);
+
+    // 6. Visualiza ocorrência individual (gera READ_OCORRENCIA) e consulta trilha de auditoria
+    const getOcrRes = await fetch(`${baseUrl}/api/ocorrencias/${ocorrencia.id}`, {
+      headers: {
+        "X-Fiio-Role": "INVESTIGADOR",
+        "X-Fiio-User-Id": "11111111-2222-3333-4444-555555555555",
+        "X-Client-Geo-Lat": "-23.550520",
+        "X-Client-Geo-Lng": "-46.633308"
+      }
+    });
+    assert.equal(getOcrRes.status, 200);
+    const ocrDetail = await getOcrRes.json();
+    assert.equal(ocrDetail.auditEntry.tipo_evento, "READ_OCORRENCIA");
+    assert.ok(ocrDetail.auditHistory.length >= 2);
   } finally {
     server.close();
   }
 });
+
+test("10. Cadeia de Custódia (createAuditLogger): registro de READ_OCORRENCIA e diff de UPDATE_APURACAO", async () => {
+  const { createAuditLogger } = await import("../src/auditMiddleware.mjs");
+  const store = [];
+  const logger = createAuditLogger(store);
+
+  const mockReq = {
+    user: { id: "99999999-8888-7777-6666-555555555555", role: "INVESTIGADOR" },
+    headers: {
+      "x-client-geo-lat": "-23.550520",
+      "x-client-geo-lng": "-46.633308",
+      "x-client-geo-accuracy": "12.5",
+      "x-forwarded-for": "192.168.1.50",
+      "user-agent": "FIIO-Auditor-Client/1.0",
+      "sec-ch-ua-platform": "Linux",
+      "x-fiio-version": "1.0.0"
+    },
+    socket: { remoteAddress: "127.0.0.1" }
+  };
+
+  const ocorrenciaId = "ocr-audit-test-001";
+
+  // 1. Log de leitura (READ_OCORRENCIA)
+  const readLog = logger.logReadOccurrence(ocorrenciaId, mockReq);
+  assert.equal(readLog.tipo_evento, "READ_OCORRENCIA");
+  assert.equal(readLog.ocorrencia_id, ocorrenciaId);
+  assert.equal(readLog.usuario_id, "99999999-8888-7777-6666-555555555555");
+  assert.equal(readLog.perfil_usuario, "INVESTIGADOR");
+  assert.equal(readLog.geo_latitude, -23.55052);
+  assert.equal(readLog.geo_longitude, -46.633308);
+  assert.equal(readLog.geo_precisao_metros, 12.5);
+  assert.equal(readLog.ip_origem, "192.168.1.50");
+  assert.equal(readLog.detalhes_alteracao.visualizacao_completa, true);
+
+  // 2. Log de atualização da apuração com documento formal (UPDATE_APURACAO)
+  const oldState = {
+    status: "Em Apuração",
+    responsavel_id: "usr-inv-9001",
+    analise_texto: "Análise preliminar",
+    conclusao_final: null,
+    apuracao_formal_nome: null,
+    apuracao_formal_hash: null
+  };
+
+  const newState = {
+    status: "Concluída",
+    responsavel_id: "usr-inv-9001",
+    analise_texto: "Análise concluída com perícia e CFTV.",
+    conclusao_final: "Infração Confirmada",
+    apuracao_formal_nome: "Laudo_Final_OCR_1001.pdf",
+    apuracao_formal_hash: "f".repeat(64)
+  };
+
+  const updateLog = logger.logUpdateInvestigation(ocorrenciaId, oldState, newState, mockReq);
+  assert.equal(updateLog.tipo_evento, "UPDATE_APURACAO");
+  assert.deepEqual(updateLog.detalhes_alteracao.status, { antes: "Em Apuração", depois: "Concluída" });
+  assert.deepEqual(updateLog.detalhes_alteracao.conclusao_final, { antes: null, depois: "Infração Confirmada" });
+  assert.deepEqual(updateLog.detalhes_alteracao.apuracao_formal_nome, { antes: null, depois: "Laudo_Final_OCR_1001.pdf" });
+  assert.deepEqual(updateLog.detalhes_alteracao.apuracao_formal_hash, { antes: null, depois: "f".repeat(64) });
+  assert.equal(updateLog.detalhes_alteracao.responsavel_id, undefined, "Campo inalterado não deve entrar no diff");
+
+  const history = logger.getHistoryByOccurrence(ocorrenciaId);
+  assert.equal(history.length, 2);
+});
+
 
 

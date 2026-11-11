@@ -5,28 +5,32 @@ import {
   CATEGORIAS_NUCLEARES,
   SETORES,
   CLIENTES_CONTRATOS,
-  getOptionsForUnitAndCategory,
   computeIntegrityHash,
   validateApuracaoUpdate
 } from "../domain/taxonomy.mjs";
 import { computeSituationalMetrics, exportOcorrenciasToCSV } from "../analytics/situationalEngine.mjs";
 import { authenticateByPin, hasPermission } from "../auth/rbac.mjs";
+import { createAuditLogger } from "../auditMiddleware.mjs";
 
 /**
  * Cria uma instância do servidor HTTP/REST do FIIO (Fluxo Integrado de Investigação de Ocorrências)
+ * com Cadeia de Custódia, Auditoria de Leitura/Mutação (Append-Only) e Apuração Formal.
  */
 export function createFiioServer() {
   const state = {
     contratos: structuredClone(CLIENTES_CONTRATOS),
-    ocorrencias: []
+    ocorrencias: [],
+    auditLogs: []
   };
+
+  const auditLogger = createAuditLogger(state.auditLogs);
 
   function sendJson(res, statusCode, data) {
     res.writeHead(statusCode, {
       "Content-Type": "application/json; charset=utf-8",
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type,X-Fiio-Role"
+      "Access-Control-Allow-Headers": "Content-Type,X-Fiio-Role,X-Fiio-User-Id,X-Client-Geo-Lat,X-Client-Geo-Lng,X-Client-Geo-Accuracy,X-Fiio-Version"
     });
     res.end(JSON.stringify(data));
   }
@@ -51,6 +55,12 @@ export function createFiioServer() {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     const pathname = url.pathname;
     const roleHeader = req.headers["x-fiio-role"] || "ADMIN";
+    const userIdHeader = req.headers["x-fiio-user-id"] || "00000000-0000-0000-0000-000000000000";
+
+    req.user = {
+      id: userIdHeader,
+      role: roleHeader
+    };
 
     if (req.method === "OPTIONS") {
       return sendJson(res, 200, { ok: true });
@@ -75,6 +85,38 @@ export function createFiioServer() {
     // 3. Listar ou Registrar Ocorrências
     if (pathname === "/api/ocorrencias" && req.method === "GET") {
       return sendJson(res, 200, { ocorrencias: state.ocorrencias });
+    }
+
+    // 3b. Visualizar Ocorrência Específica (Registra READ_OCORRENCIA na Cadeia de Custódia)
+    if (
+      pathname.startsWith("/api/ocorrencias/") &&
+      pathname.split("/").length === 4 &&
+      req.method === "GET"
+    ) {
+      const id = pathname.split("/")[3];
+      const ocr = state.ocorrencias.find(o => o.id === id);
+      if (!ocr) {
+        return sendJson(res, 404, { error: "Ocorrência não encontrada." });
+      }
+      const auditEntry = auditLogger.logReadOccurrence(id, req);
+      return sendJson(res, 200, {
+        ocorrencia: ocr,
+        auditEntry,
+        auditHistory: auditLogger.getHistoryByOccurrence(id)
+      });
+    }
+
+    // 3c. Consultar Histórico de Auditoria de uma Ocorrência
+    if (
+      pathname.startsWith("/api/ocorrencias/") &&
+      pathname.endsWith("/audit") &&
+      req.method === "GET"
+    ) {
+      const id = pathname.split("/")[3];
+      return sendJson(res, 200, {
+        ocorrencia_id: id,
+        logs: auditLogger.getHistoryByOccurrence(id)
+      });
     }
 
     if (pathname === "/api/ocorrencias" && req.method === "POST") {
@@ -105,15 +147,20 @@ export function createFiioServer() {
         hashIntegridade,
         apuracao: {
           status: "Não Iniciada",
+          responsavel_id: null,
           conclusaoFinal: null,
-          analiseTexto: ""
+          analiseTexto: "",
+          apuracaoFormalNome: null,
+          apuracaoFormalHash: null,
+          apuracaoFormalUrl: null,
+          apuracaoFormalUploadedAt: null
         }
       };
       state.ocorrencias.unshift(nova);
       return sendJson(res, 201, { ocorrencia: nova });
     }
 
-    // 4. Atualização de Status e Parecer da Apuração (Exige perfil INVESTIGADOR ou ADMIN)
+    // 4. Atualização de Status, Parecer e Apuração Formal (Exige perfil INVESTIGADOR ou ADMIN + Loga UPDATE_APURACAO)
     if (pathname.startsWith("/api/ocorrencias/") && pathname.endsWith("/apuracao") && req.method === "PATCH") {
       if (!hasPermission(roleHeader, "ATUALIZAR_STATUS_APURACAO")) {
         return sendJson(res, 403, { error: "Apenas Investigadores ou Administradores podem alterar a apuração." });
@@ -125,18 +172,54 @@ export function createFiioServer() {
       }
 
       const body = await parseBody(req);
+      const nextStatus = body.status ?? ocr.apuracao.status;
+      const nextConclusao = body.conclusaoFinal !== undefined ? body.conclusaoFinal : ocr.apuracao.conclusaoFinal;
+
       const check = validateApuracaoUpdate({
-        status: body.status,
-        conclusaoFinal: body.conclusaoFinal
+        status: nextStatus,
+        conclusaoFinal: nextConclusao
       });
       if (!check.valid) {
         return sendJson(res, 422, { error: check.error });
       }
 
-      ocr.apuracao.status = body.status;
+      const oldState = {
+        status: ocr.apuracao.status,
+        responsavel_id: ocr.apuracao.responsavel_id ?? null,
+        analise_texto: ocr.apuracao.analiseTexto ?? "",
+        conclusao_final: ocr.apuracao.conclusaoFinal ?? null,
+        apuracao_formal_nome: ocr.apuracao.apuracaoFormalNome ?? null,
+        apuracao_formal_hash: ocr.apuracao.apuracaoFormalHash ?? null
+      };
+
+      ocr.apuracao.status = nextStatus;
+      ocr.apuracao.responsavel_id = body.responsavel_id ?? ocr.apuracao.responsavel_id ?? null;
       ocr.apuracao.analiseTexto = body.analiseTexto ?? ocr.apuracao.analiseTexto;
-      ocr.apuracao.conclusaoFinal = body.status === "Concluída" ? body.conclusaoFinal : (body.conclusaoFinal || null);
-      return sendJson(res, 200, { ocorrencia: ocr });
+      ocr.apuracao.conclusaoFinal = nextStatus === "Concluída" ? nextConclusao : (nextConclusao || null);
+
+      if (body.apuracaoFormalNome !== undefined) {
+        ocr.apuracao.apuracaoFormalNome = body.apuracaoFormalNome;
+        ocr.apuracao.apuracaoFormalHash = body.apuracaoFormalHash || null;
+        ocr.apuracao.apuracaoFormalUrl = body.apuracaoFormalUrl || `/anexos/formal/${body.apuracaoFormalNome}`;
+        ocr.apuracao.apuracaoFormalUploadedAt = new Date().toISOString();
+      }
+
+      const newState = {
+        status: ocr.apuracao.status,
+        responsavel_id: ocr.apuracao.responsavel_id ?? null,
+        analise_texto: ocr.apuracao.analiseTexto ?? "",
+        conclusao_final: ocr.apuracao.conclusaoFinal ?? null,
+        apuracao_formal_nome: ocr.apuracao.apuracaoFormalNome ?? null,
+        apuracao_formal_hash: ocr.apuracao.apuracaoFormalHash ?? null
+      };
+
+      const auditEntry = auditLogger.logUpdateInvestigation(id, oldState, newState, req);
+
+      return sendJson(res, 200, {
+        ocorrencia: ocr,
+        auditEntry,
+        auditHistory: auditLogger.getHistoryByOccurrence(id)
+      });
     }
 
     // 5. Gestão de Locais Fixos por Unidade (Exige perfil ADMIN)
@@ -190,14 +273,13 @@ export function createFiioServer() {
     return sendJson(res, 404, { error: "Rota não encontrada no FIIO." });
   });
 
-  return { server, state };
+  return { server, state, auditLogger };
 }
 
-// Se executado diretamente via CLI (`node src/server/apiServer.mjs`), inicia na porta 3000 (ou PORT)
 if (import.meta.url === `file://${process.argv[1]}`) {
   const port = Number(process.env.PORT || 3000);
   const { server } = createFiioServer();
   server.listen(port, () => {
-    console.log(`🛡️ Servidor FIIO (API + PWA) ativo em http://localhost:${port}`);
+    console.log(`🛡️ Servidor FIIO (API + PWA + Cadeia de Custódia) ativo em http://localhost:${port}`);
   });
 }
