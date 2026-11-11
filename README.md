@@ -1,4 +1,4 @@
-# 🛡️ Sentinela — Gestão de Ocorrências Patrimoniais & Central de Apuração
+# 🛡️ FIIO — Fluxo Integrado de Investigação de Ocorrências
 
 Aplicação **PWA Offline-First** para registro de ocorrências em campo pelo vigilante e **Painel Web de Apuração e Auditoria**, estruturada com arquitetura **Multi-Contrato ➔ Multi-Unidade (`setor_id` por unidade) ➔ Locais Fixos** e matriz de taxonomia em cascata (**6 Categorias Nucleares × 14 Setores Operacionais**).
 

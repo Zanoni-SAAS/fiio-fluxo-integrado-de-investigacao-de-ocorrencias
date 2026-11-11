@@ -1,8 +1,8 @@
 -- ============================================================================
 -- MIGRATION 001: ESQUEMA INICIAL (PostgreSQL / Supabase)
--- Sistema Sentinela: Registro de Ocorrências (PWA Offline-First) e Apuração
+-- FIIO - Fluxo Integrado de Investigação de Ocorrências (PWA + Central Web)
 -- Arquitetura Multi-Contrato / Multi-Unidade (setor_id vinculado à Unidade)
--- Matriz Completa: 14 Setores x 6 Categorias (22 Nucleares + 102 Específicas)
+-- Matriz Completa: 14 Setores x 6 Categorias (22 Nucleares + 167 Específicas)
 -- ============================================================================
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
