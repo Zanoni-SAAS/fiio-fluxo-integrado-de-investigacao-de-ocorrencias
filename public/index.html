@@ -128,12 +128,17 @@
 
           <!-- STEP 1: LOCAL & DATA/HORA -->
           <div id="mobile-step-1" class="space-y-4">
-            <div class="p-3 rounded-lg bg-[var(--background)] border border-[var(--card-border)] flex items-center justify-between text-xs">
+            <div class="p-3 rounded-lg bg-[var(--background)] border border-[var(--card-border)] flex flex-wrap items-center justify-between gap-2 text-xs">
               <div>
-                <span class="text-[var(--muted-foreground)] block">Agente Autenticado (PIN/Biometria)</span>
-                <span class="font-semibold">Vigilante Carlos Eduardo • Matrícula #4829</span>
+                <span class="text-[var(--muted-foreground)] block">Agente Autenticado (PIN Rápido / Biometria)</span>
+                <span id="loggedAgentLabel" class="font-semibold">Vigilante Carlos Eduardo • PIN #4829</span>
               </div>
-              <span class="font-mono text-xs text-[var(--muted-foreground)]" id="gpsPreview">GPS: -23.5505, -46.6333</span>
+              <div class="flex items-center gap-1.5">
+                <input type="password" id="pinQuickInput" maxlength="4" placeholder="PIN (ex: 1055)" class="w-24 bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1 text-xs font-mono" />
+                <button type="button" onclick="authenticateMobilePin()" class="px-2.5 py-1 rounded bg-[var(--secondary)] text-[var(--secondary-foreground)] text-xs font-semibold">
+                  Autenticar PIN
+                </button>
+              </div>
             </div>
 
             <div>
@@ -2172,6 +2177,53 @@
 
     function closeDossieModal() {
       document.getElementById("dossieModal").classList.add("hidden");
+    }
+
+    // =========================================================================
+    // 13. CONTROLE DE ACESSO BASEADO EM PERFIL (RBAC) E AUTENTICAÇÃO PIN
+    // =========================================================================
+    function handleRoleChange(role) {
+      const tabApuracao = document.getElementById("tab-apuracao");
+      const tabSituacional = document.getElementById("tab-situacional");
+      const tabAdmin = document.getElementById("tab-admin");
+      const tabMatriz = document.getElementById("tab-matriz");
+
+      if (role === "AGENTE") {
+        tabApuracao.classList.add("hidden");
+        tabSituacional.classList.add("hidden");
+        tabAdmin.classList.add("hidden");
+        tabMatriz.classList.add("hidden");
+        switchTab("mobile");
+        showMobileFeedback("Perfil AGENTE ativo: interface restrita ao registro mobile e fila offline.", false);
+      } else if (role === "INVESTIGADOR") {
+        tabApuracao.classList.remove("hidden");
+        tabSituacional.classList.remove("hidden");
+        tabAdmin.classList.add("hidden");
+        tabMatriz.classList.remove("hidden");
+        if (currentTab === "admin") switchTab("apuracao");
+      } else {
+        tabApuracao.classList.remove("hidden");
+        tabSituacional.classList.remove("hidden");
+        tabAdmin.classList.remove("hidden");
+        tabMatriz.classList.remove("hidden");
+      }
+    }
+
+    function authenticateMobilePin() {
+      const pin = (document.getElementById("pinQuickInput").value || "").trim();
+      const label = document.getElementById("loggedAgentLabel");
+      if (pin === "1055") {
+        label.textContent = "Vigilante Líder Roberto Almeida • PIN #1055";
+        handleSectorChange(4); // Data Center
+        showMobileFeedback("✓ PIN #1055 autenticado! Posto alterado para Data Center Tier III (Setor 4).", false);
+      } else if (pin === "4829") {
+        label.textContent = "Vigilante Carlos Eduardo • PIN #4829";
+        handleSectorChange(3); // ETA Sabesp
+        showMobileFeedback("✓ PIN #4829 autenticado! Posto alterado para ETA Guaraú (Setor 3).", false);
+      } else {
+        showMobileFeedback("⚠️ PIN não encontrado. Use 4829 (Carlos) ou 1055 (Roberto) para testar.", true);
+      }
+      document.getElementById("pinQuickInput").value = "";
     }
 
     // Boot

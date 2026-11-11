@@ -1,0 +1,10 @@
+{
+  "name": "FIIO - Fluxo Integrado de Investigação de Ocorrências",
+  "short_name": "FIIO",
+  "description": "Sistema PWA Offline-First de Registro de Ocorrências Patrimoniais e Central de Apuração Multi-Unidade (14 Setores x 6 Categorias)",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0284c7",
+  "orientation": "portrait-primary"
+}

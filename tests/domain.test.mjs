@@ -183,3 +183,89 @@ test("7. Painel Situacional & Mapa de Calor agrupa locais fixos e calcula taxa d
   assert.ok(csv.includes("Infração Confirmada"));
 });
 
+test("8. Autenticação por PIN e Controle de Acesso (RBAC) por perfil (AGENTE, INVESTIGADOR, ADMIN)", async () => {
+  const { authenticateByPin, hasPermission } = await import("../src/auth/rbac.mjs");
+
+  const authAgente = authenticateByPin("4829");
+  assert.equal(authAgente.authenticated, true);
+  assert.equal(authAgente.usuario.perfil, "AGENTE");
+  assert.equal(hasPermission("AGENTE", "REGISTRAR_OCORRENCIA"), true);
+  assert.equal(hasPermission("AGENTE", "ATUALIZAR_STATUS_APURACAO"), false);
+  assert.equal(hasPermission("AGENTE", "GERENCIAR_LOCAIS"), false);
+
+  const authInv = authenticateByPin("9001");
+  assert.equal(authInv.authenticated, true);
+  assert.equal(authInv.usuario.perfil, "INVESTIGADOR");
+  assert.equal(hasPermission("INVESTIGADOR", "ATUALIZAR_STATUS_APURACAO"), true);
+  assert.equal(hasPermission("INVESTIGADOR", "GERENCIAR_LOCAIS"), false);
+
+  const authInvalido = authenticateByPin("9999");
+  assert.equal(authInvalido.authenticated, false);
+});
+
+test("9. Servidor REST API FIIO: registro, bloqueio RBAC, validação 422 na apuração e analytics", async () => {
+  const { createFiioServer } = await import("../src/server/apiServer.mjs");
+  const { server } = createFiioServer();
+
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    // 1. Agente registra ocorrência via POST /api/ocorrencias
+    const postRes = await fetch(`${baseUrl}/api/ocorrencias`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Fiio-Role": "AGENTE" },
+      body: JSON.stringify({
+        unidadeId: "uni-sabesp-eta",
+        setorId: 3,
+        localNome: "Estação de Tratamento (ETA/ETE)",
+        categoriaId: 5,
+        opcaoEspecifica: "Problemas com equipamentos de segurança ou combate a incêndio (CFTV, controle de acesso, alarme, extintores)",
+        descricao: "Extintor vencido constatado em ronda"
+      })
+    });
+    assert.equal(postRes.status, 201);
+    const { ocorrencia } = await postRes.json();
+    assert.equal(ocorrencia.hashIntegridade.length, 64);
+
+    // 2. Agente tenta alterar status da apuração -> deve receber 403 Forbidden
+    const patchForbidden = await fetch(`${baseUrl}/api/ocorrencias/${ocorrencia.id}/apuracao`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "X-Fiio-Role": "AGENTE" },
+      body: JSON.stringify({ status: "Em Apuração" })
+    });
+    assert.equal(patchForbidden.status, 403);
+
+    // 3. Investigador tenta concluir sem Conclusão Final -> deve receber 422 Unprocessable Entity
+    const patchInvalid = await fetch(`${baseUrl}/api/ocorrencias/${ocorrencia.id}/apuracao`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "X-Fiio-Role": "INVESTIGADOR" },
+      body: JSON.stringify({ status: "Concluída", conclusaoFinal: null })
+    });
+    assert.equal(patchInvalid.status, 422);
+
+    // 4. Investigador conclui com Conclusão Final válida -> 200 OK
+    const patchValid = await fetch(`${baseUrl}/api/ocorrencias/${ocorrencia.id}/apuracao`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "X-Fiio-Role": "INVESTIGADOR" },
+      body: JSON.stringify({
+        status: "Concluída",
+        conclusaoFinal: "Infração Confirmada",
+        analiseTexto: "Troca confirmada junto ao SESMT."
+      })
+    });
+    assert.equal(patchValid.status, 200);
+
+    // 5. Consulta Analytics em tempo real
+    const analyticsRes = await fetch(`${baseUrl}/api/analytics`);
+    assert.equal(analyticsRes.status, 200);
+    const metrics = await analyticsRes.json();
+    assert.equal(metrics.total, 1);
+    assert.equal(metrics.taxaConfirmacaoPct, 100);
+  } finally {
+    server.close();
+  }
+});
+
+

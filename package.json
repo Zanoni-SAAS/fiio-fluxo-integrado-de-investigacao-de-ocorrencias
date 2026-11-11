@@ -4,6 +4,7 @@
   "description": "FIIO - Fluxo Integrado de Investigação de Ocorrências (PWA Offline-First & Central de Apuração Multi-Contrato / Multi-Unidade)",
   "type": "module",
   "scripts": {
+    "start": "node src/server/apiServer.mjs",
     "test": "node --test tests/domain.test.mjs",
     "generate:seed": "node scripts/generate-sql-seed.mjs"
   },
