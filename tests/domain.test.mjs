@@ -264,7 +264,7 @@ test("9. Servidor REST API FIIO: registro, bloqueio RBAC, validação 422 na apu
     assert.equal(metrics.total, 1);
     assert.equal(metrics.taxaConfirmacaoPct, 100);
 
-    // 6. Visualiza ocorrência individual (gera READ_OCORRENCIA) e consulta trilha de auditoria
+    // 6. Visualiza ocorrência individual (gera READ_OCORRENCIA via fn_registrar_acesso_ocorrencia) e consulta trilha de auditoria
     const getOcrRes = await fetch(`${baseUrl}/api/ocorrencias/${ocorrencia.id}`, {
       headers: {
         "X-Fiio-Role": "INVESTIGADOR",
@@ -276,14 +276,33 @@ test("9. Servidor REST API FIIO: registro, bloqueio RBAC, validação 422 na apu
     assert.equal(getOcrRes.status, 200);
     const ocrDetail = await getOcrRes.json();
     assert.equal(ocrDetail.auditEntry.tipo_evento, "READ_OCORRENCIA");
+    assert.equal(ocrDetail.auditEntry.detalhes_alteracao.rpc, "fn_registrar_acesso_ocorrencia");
     assert.ok(ocrDetail.auditHistory.length >= 2);
+
+    // 7. Tentativa de mutação de conclusao_agente pós-registro deve ser bloqueada com 409 Conflict (Cadeia de Custódia)
+    const tamperRes = await fetch(`${baseUrl}/api/ocorrencias/${ocorrencia.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "X-Fiio-Role": "ADMIN" },
+      body: JSON.stringify({ conclusaoAgente: "Tentativa de adulterar conclusão preliminar do vigilante" })
+    });
+    assert.equal(tamperRes.status, 409);
+    const tamperBody = await tamperRes.json();
+    assert.equal(tamperBody.violatedField, "conclusao_agente");
+
+    // 8. Verifica endpoint do script único BYODB (/api/byodb/setup.sql)
+    const sqlRes = await fetch(`${baseUrl}/api/byodb/setup.sql`);
+    assert.equal(sqlRes.status, 200);
+    const sqlText = await sqlRes.text();
+    assert.ok(sqlText.includes("OLD.conclusao_agente IS DISTINCT FROM NEW.conclusao_agente"));
+    assert.ok(sqlText.includes("fn_registrar_acesso_ocorrencia"));
+    assert.ok(sqlText.includes("fn_log_occurrence_access"));
   } finally {
     server.close();
   }
 });
 
-test("10. Cadeia de Custódia (createAuditLogger): registro de READ_OCORRENCIA e diff de UPDATE_APURACAO", async () => {
-  const { createAuditLogger } = await import("../src/auditMiddleware.mjs");
+test("10. Cadeia de Custódia (createAuditLogger): fn_registrar_acesso_ocorrencia, alias fn_log_occurrence_access e diff de UPDATE_APURACAO", async () => {
+  const { createAuditLogger, assertInitialReportImmutability } = await import("../src/auditMiddleware.mjs");
   const store = [];
   const logger = createAuditLogger(store);
 
@@ -303,8 +322,8 @@ test("10. Cadeia de Custódia (createAuditLogger): registro de READ_OCORRENCIA e
 
   const ocorrenciaId = "ocr-audit-test-001";
 
-  // 1. Log de leitura (READ_OCORRENCIA)
-  const readLog = logger.logReadOccurrence(ocorrenciaId, mockReq);
+  // 1. Log de leitura via função padronizada fn_registrar_acesso_ocorrencia e alias fn_log_occurrence_access
+  const readLog = logger.fn_registrar_acesso_ocorrencia(ocorrenciaId, mockReq);
   assert.equal(readLog.tipo_evento, "READ_OCORRENCIA");
   assert.equal(readLog.ocorrencia_id, ocorrenciaId);
   assert.equal(readLog.usuario_id, "99999999-8888-7777-6666-555555555555");
@@ -314,6 +333,11 @@ test("10. Cadeia de Custódia (createAuditLogger): registro de READ_OCORRENCIA e
   assert.equal(readLog.geo_precisao_metros, 12.5);
   assert.equal(readLog.ip_origem, "192.168.1.50");
   assert.equal(readLog.detalhes_alteracao.visualizacao_completa, true);
+  assert.equal(readLog.detalhes_alteracao.rpc, "fn_registrar_acesso_ocorrencia");
+
+  const aliasLog = logger.fn_log_occurrence_access(ocorrenciaId, mockReq);
+  assert.equal(aliasLog.tipo_evento, "READ_OCORRENCIA");
+  assert.equal(aliasLog.detalhes_alteracao.rpc, "fn_registrar_acesso_ocorrencia");
 
   // 2. Log de atualização da apuração com documento formal (UPDATE_APURACAO)
   const oldState = {
@@ -343,8 +367,51 @@ test("10. Cadeia de Custódia (createAuditLogger): registro de READ_OCORRENCIA e
   assert.equal(updateLog.detalhes_alteracao.responsavel_id, undefined, "Campo inalterado não deve entrar no diff");
 
   const history = logger.getHistoryByOccurrence(ocorrenciaId);
-  assert.equal(history.length, 2);
+  assert.equal(history.length, 3);
+
+  // 3. Trava de Imutabilidade do Relato Inicial do Agente (descricao, acoes_tomadas e conclusao_agente)
+  const relatoOriginal = {
+    descricao: "Porta de emergência destrancada no Hall A",
+    acoes_tomadas: "Acionamento imediato da supervisão e trancamento",
+    conclusao_agente: "Acesso vulnerável normalizado em campo",
+    hash_integridade: "a".repeat(64),
+    agente_id: "usr-agt-4829",
+    data_hora_fato: "2026-11-11T08:00:00Z"
+  };
+
+  assert.equal(assertInitialReportImmutability(relatoOriginal, {}), true);
+  assert.throws(
+    () => assertInitialReportImmutability(relatoOriginal, { conclusao_agente: "Conclusão adulterada" }),
+    /CADEIA DE CUSTÓDIA FIIO/
+  );
+  assert.throws(
+    () => assertInitialReportImmutability(relatoOriginal, { acoes_tomadas: "Ação adulterada" }),
+    /CADEIA DE CUSTÓDIA FIIO/
+  );
+  assert.throws(
+    () => assertInitialReportImmutability(relatoOriginal, { descricao: "Descrição adulterada" }),
+    /CADEIA DE CUSTÓDIA FIIO/
+  );
 });
+
+test("11. Consolidação BYODB (database/setup_byodb_completo.sql): ordem exata 001 + 002 + 003 e proteção de conclusao_agente", async () => {
+  const fs = await import("node:fs");
+  const sql003 = fs.readFileSync("database/migrations/003_audit_and_formal_investigation.sql", "utf8");
+  const sqlCompleto = fs.readFileSync("database/setup_byodb_completo.sql", "utf8");
+
+  assert.ok(sql003.includes("ADD COLUMN IF NOT EXISTS conclusao_agente TEXT"));
+  assert.ok(sql003.includes("(OLD.conclusao_agente IS DISTINCT FROM NEW.conclusao_agente)"));
+  assert.ok(sql003.includes("CREATE OR REPLACE FUNCTION fn_registrar_acesso_ocorrencia"));
+  assert.ok(sql003.includes("CREATE OR REPLACE FUNCTION fn_log_occurrence_access"));
+
+  const pos001 = sqlCompleto.indexOf("MIGRATION 001: ESQUEMA INICIAL");
+  const pos002 = sqlCompleto.indexOf("SEED 002: POPULAÇÃO DA MATRIZ COMPLETA");
+  const pos003 = sqlCompleto.indexOf("MIGRAÇÃO 003: CADEIA DE CUSTÓDIA");
+
+  assert.ok(pos001 !== -1 && pos002 !== -1 && pos003 !== -1, "Deve conter as 3 seções no script único BYODB");
+  assert.ok(pos001 < pos002 && pos002 < pos003, "Ordem exata deve ser 001 -> 002 -> 003");
+});
+
 
 
 

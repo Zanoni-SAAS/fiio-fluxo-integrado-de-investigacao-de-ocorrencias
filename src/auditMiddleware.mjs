@@ -1,9 +1,11 @@
 import crypto from 'node:crypto';
+import { validateInitialReportImmutability } from './domain/taxonomy.mjs';
 
-export function extractAuditContext(req) {
-  const geoLat = req.headers['x-client-geo-lat'] ? Number(req.headers['x-client-geo-lat']) : null;
-  const geoLng = req.headers['x-client-geo-lng'] ? Number(req.headers['x-client-geo-lng']) : null;
-  const geoAccuracy = req.headers['x-client-geo-accuracy'] ? Number(req.headers['x-client-geo-accuracy']) : null;
+export function extractAuditContext(req = {}) {
+  const headers = req.headers || {};
+  const geoLat = headers['x-client-geo-lat'] ? Number(headers['x-client-geo-lat']) : null;
+  const geoLng = headers['x-client-geo-lng'] ? Number(headers['x-client-geo-lng']) : null;
+  const geoAccuracy = headers['x-client-geo-accuracy'] ? Number(headers['x-client-geo-accuracy']) : null;
 
   return {
     usuario_id: req.user?.id || '00000000-0000-0000-0000-000000000000',
@@ -11,30 +13,50 @@ export function extractAuditContext(req) {
     geo_latitude: Number.isFinite(geoLat) ? geoLat : null,
     geo_longitude: Number.isFinite(geoLng) ? geoLng : null,
     geo_precisao_metros: Number.isFinite(geoAccuracy) ? geoAccuracy : null,
-    ip_origem: (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '127.0.0.1').split(',')[0].trim(),
+    ip_origem: (headers['x-forwarded-for'] || req.socket?.remoteAddress || '127.0.0.1').split(',')[0].trim(),
     dispositivo_info: {
-      userAgent: req.headers['user-agent'] || 'Unknown',
-      platform: req.headers['sec-ch-ua-platform'] || 'Web/PWA',
-      appVersion: req.headers['x-fiio-version'] || '1.0.0'
+      userAgent: headers['user-agent'] || 'Unknown',
+      platform: headers['sec-ch-ua-platform'] || 'Web/PWA',
+      appVersion: headers['x-fiio-version'] || '1.0.0'
     }
   };
 }
 
+export function assertInitialReportImmutability(originalOcorrencia, proposedUpdate) {
+  const result = validateInitialReportImmutability(originalOcorrencia, proposedUpdate);
+  if (!result.valid) {
+    throw new Error(result.error);
+  }
+  return true;
+}
+
 export function createAuditLogger(auditStore = []) {
+  function fn_registrar_acesso_ocorrencia(ocorrenciaId, req) {
+    const ctx = extractAuditContext(req);
+    const entry = {
+      id: crypto.randomUUID(),
+      ocorrencia_id: ocorrenciaId,
+      ...ctx,
+      tipo_evento: 'READ_OCORRENCIA',
+      detalhes_alteracao: {
+        visualizacao_completa: true,
+        rpc: 'fn_registrar_acesso_ocorrencia'
+      },
+      created_at: new Date().toISOString()
+    };
+    auditStore.push(entry);
+    return entry;
+  }
+
+  // Alias de compatibilidade unificado com database/migrations/003_audit_and_formal_investigation.sql
+  function fn_log_occurrence_access(ocorrenciaId, req) {
+    return fn_registrar_acesso_ocorrencia(ocorrenciaId, req);
+  }
+
   return {
-    logReadOccurrence(ocorrenciaId, req) {
-      const ctx = extractAuditContext(req);
-      const entry = {
-        id: crypto.randomUUID(),
-        ocorrencia_id: ocorrenciaId,
-        ...ctx,
-        tipo_evento: 'READ_OCORRENCIA',
-        detalhes_alteracao: { visualizacao_completa: true },
-        created_at: new Date().toISOString()
-      };
-      auditStore.push(entry);
-      return entry;
-    },
+    fn_registrar_acesso_ocorrencia,
+    fn_log_occurrence_access,
+    logReadOccurrence: fn_registrar_acesso_ocorrencia,
 
     logUpdateInvestigation(ocorrenciaId, oldState, newState, req) {
       const ctx = extractAuditContext(req);

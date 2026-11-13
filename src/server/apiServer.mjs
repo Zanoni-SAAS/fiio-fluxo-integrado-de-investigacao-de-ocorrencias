@@ -6,7 +6,8 @@ import {
   SETORES,
   CLIENTES_CONTRATOS,
   computeIntegrityHash,
-  validateApuracaoUpdate
+  validateApuracaoUpdate,
+  validateInitialReportImmutability
 } from "../domain/taxonomy.mjs";
 import { computeSituationalMetrics, exportOcorrenciasToCSV } from "../analytics/situationalEngine.mjs";
 import { authenticateByPin, hasPermission } from "../auth/rbac.mjs";
@@ -14,7 +15,7 @@ import { createAuditLogger } from "../auditMiddleware.mjs";
 
 /**
  * Cria uma instância do servidor HTTP/REST do FIIO (Fluxo Integrado de Investigação de Ocorrências)
- * com Cadeia de Custódia, Auditoria de Leitura/Mutação (Append-Only) e Apuração Formal.
+ * com Cadeia de Custódia, Auditoria de Leitura/Mutação (Append-Only), Apuração Formal e Suporte BYODB.
  */
 export function createFiioServer() {
   const state = {
@@ -82,12 +83,42 @@ export function createFiioServer() {
       });
     }
 
+    // 2b. Script Único de Instalação BYODB (Supabase SQL Editor)
+    if (pathname === "/api/byodb/setup.sql" && req.method === "GET") {
+      const sqlPath = path.resolve("database/setup_byodb_completo.sql");
+      if (fs.existsSync(sqlPath)) {
+        res.writeHead(200, {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Access-Control-Allow-Origin": "*"
+        });
+        return res.end(fs.readFileSync(sqlPath, "utf8"));
+      }
+      return sendJson(res, 404, { error: "Arquivo setup_byodb_completo.sql não encontrado." });
+    }
+
+    // 2c. Endpoints RPC unificados para Auditoria de Leitura (fn_registrar_acesso_ocorrencia e alias fn_log_occurrence_access)
+    if (
+      (pathname === "/api/rpc/fn_registrar_acesso_ocorrencia" ||
+        pathname === "/api/rpc/fn_log_occurrence_access") &&
+      req.method === "POST"
+    ) {
+      const body = await parseBody(req);
+      const ocorrenciaId = body.p_ocorrencia_id || body.ocorrencia_id;
+      if (!ocorrenciaId) {
+        return sendJson(res, 400, { error: "p_ocorrencia_id é obrigatório." });
+      }
+      const entry = pathname.endsWith("fn_log_occurrence_access")
+        ? auditLogger.fn_log_occurrence_access(ocorrenciaId, req)
+        : auditLogger.fn_registrar_acesso_ocorrencia(ocorrenciaId, req);
+      return sendJson(res, 200, { log_id: entry.id, auditEntry: entry });
+    }
+
     // 3. Listar ou Registrar Ocorrências
     if (pathname === "/api/ocorrencias" && req.method === "GET") {
       return sendJson(res, 200, { ocorrencias: state.ocorrencias });
     }
 
-    // 3b. Visualizar Ocorrência Específica (Registra READ_OCORRENCIA na Cadeia de Custódia)
+    // 3b. Visualizar Ocorrência Específica (Registra READ_OCORRENCIA via fn_registrar_acesso_ocorrencia)
     if (
       pathname.startsWith("/api/ocorrencias/") &&
       pathname.split("/").length === 4 &&
@@ -98,7 +129,7 @@ export function createFiioServer() {
       if (!ocr) {
         return sendJson(res, 404, { error: "Ocorrência não encontrada." });
       }
-      const auditEntry = auditLogger.logReadOccurrence(id, req);
+      const auditEntry = auditLogger.fn_registrar_acesso_ocorrencia(id, req);
       return sendJson(res, 200, {
         ocorrencia: ocr,
         auditEntry,
@@ -106,7 +137,29 @@ export function createFiioServer() {
       });
     }
 
-    // 3c. Consultar Histórico de Auditoria de uma Ocorrência
+    // 3c. Tentativa de edição direta da ocorrência (Trava de Imutabilidade do Relato Inicial do Agente)
+    if (
+      pathname.startsWith("/api/ocorrencias/") &&
+      pathname.split("/").length === 4 &&
+      req.method === "PATCH"
+    ) {
+      const id = pathname.split("/")[3];
+      const ocr = state.ocorrencias.find(o => o.id === id);
+      if (!ocr) {
+        return sendJson(res, 404, { error: "Ocorrência não encontrada." });
+      }
+      const body = await parseBody(req);
+      const immutabilityCheck = validateInitialReportImmutability(ocr, body);
+      if (!immutabilityCheck.valid) {
+        return sendJson(res, 409, {
+          error: immutabilityCheck.error,
+          violatedField: immutabilityCheck.violatedField
+        });
+      }
+      return sendJson(res, 200, { ocorrencia: ocr });
+    }
+
+    // 3d. Consultar Histórico de Auditoria de uma Ocorrência
     if (
       pathname.startsWith("/api/ocorrencias/") &&
       pathname.endsWith("/audit") &&
@@ -132,6 +185,7 @@ export function createFiioServer() {
       const nova = {
         id: `ocr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         protocolo: body.protocolo || `FIIO-2026-${1000 + state.ocorrencias.length + 1}`,
+        agenteId: body.agenteId || userIdHeader,
         unidadeId: body.unidadeId || "uni-sabesp-eta",
         setorId: Number(body.setorId || 3),
         setorNome: body.setorNome || "3. Setor Industrial",
@@ -172,6 +226,16 @@ export function createFiioServer() {
       }
 
       const body = await parseBody(req);
+
+      // Garante que nem mesmo via endpoint de apuração o relato inicial do vigilante possa ser alterado
+      const immutabilityCheck = validateInitialReportImmutability(ocr, body);
+      if (!immutabilityCheck.valid) {
+        return sendJson(res, 409, {
+          error: immutabilityCheck.error,
+          violatedField: immutabilityCheck.violatedField
+        });
+      }
+
       const nextStatus = body.status ?? ocr.apuracao.status;
       const nextConclusao = body.conclusaoFinal !== undefined ? body.conclusaoFinal : ocr.apuracao.conclusaoFinal;
 
@@ -264,7 +328,8 @@ export function createFiioServer() {
         ".html": "text/html; charset=utf-8",
         ".js": "application/javascript; charset=utf-8",
         ".webmanifest": "application/manifest+json; charset=utf-8",
-        ".json": "application/json; charset=utf-8"
+        ".json": "application/json; charset=utf-8",
+        ".sql": "text/plain; charset=utf-8"
       };
       res.writeHead(200, { "Content-Type": mimeTypes[ext] || "text/plain; charset=utf-8" });
       return res.end(fs.readFileSync(filePath));
@@ -280,6 +345,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const port = Number(process.env.PORT || 3000);
   const { server } = createFiioServer();
   server.listen(port, () => {
-    console.log(`🛡️ Servidor FIIO (API + PWA + Cadeia de Custódia) ativo em http://localhost:${port}`);
+    console.log(`🛡️ Servidor FIIO (API + PWA + Cadeia de Custódia + BYODB) ativo em http://localhost:${port}`);
   });
 }

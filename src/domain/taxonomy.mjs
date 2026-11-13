@@ -651,9 +651,60 @@ export function computeIntegrityHash(ocorrenciaPayload) {
     categoriaId: ocorrenciaPayload.categoriaId,
     opcaoEspecifica: ocorrenciaPayload.opcaoEspecifica,
     descricao: ocorrenciaPayload.descricao,
+    acoesTomadas: ocorrenciaPayload.acoesTomadas ?? ocorrenciaPayload.acoes_tomadas ?? "",
+    conclusaoAgente: ocorrenciaPayload.conclusaoAgente ?? ocorrenciaPayload.conclusao_agente ?? "",
     dataHoraFato: ocorrenciaPayload.dataHoraFato
   });
   return crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+/**
+ * Trava de Imutabilidade do Relato Original do Agente (espelha `fn_lock_initial_occurrence_report` da Migração 003).
+ * Garante que os 3 campos de texto livre do vigilante (`descricao`, `acoes_tomadas`, `conclusao_agente`),
+ * além de `hash_integridade`, `agente_id` e `data_hora_fato`, sejam estritamente imutáveis após o registro.
+ */
+export function validateInitialReportImmutability(original, proposedUpdate = {}) {
+  const pairs = [
+    ["descricao", original.descricao, proposedUpdate.descricao],
+    [
+      "acoes_tomadas",
+      original.acoes_tomadas ?? original.acoesTomadas,
+      proposedUpdate.acoes_tomadas !== undefined ? proposedUpdate.acoes_tomadas : proposedUpdate.acoesTomadas
+    ],
+    [
+      "conclusao_agente",
+      original.conclusao_agente ?? original.conclusaoAgente,
+      proposedUpdate.conclusao_agente !== undefined ? proposedUpdate.conclusao_agente : proposedUpdate.conclusaoAgente
+    ],
+    [
+      "hash_integridade",
+      original.hash_integridade ?? original.hashIntegridade,
+      proposedUpdate.hash_integridade !== undefined ? proposedUpdate.hash_integridade : proposedUpdate.hashIntegridade
+    ],
+    [
+      "agente_id",
+      original.agente_id ?? original.agenteId,
+      proposedUpdate.agente_id !== undefined ? proposedUpdate.agente_id : proposedUpdate.agenteId
+    ],
+    [
+      "data_hora_fato",
+      original.data_hora_fato ?? original.dataHoraFato,
+      proposedUpdate.data_hora_fato !== undefined ? proposedUpdate.data_hora_fato : proposedUpdate.dataHoraFato
+    ]
+  ];
+
+  for (const [campo, valorOriginal, valorNovo] of pairs) {
+    if (valorNovo !== undefined && valorNovo !== valorOriginal) {
+      return {
+        valid: false,
+        violatedField: campo,
+        error:
+          "CADEIA DE CUSTÓDIA FIIO: O relato inicial do agente (descricao, acoes_tomadas, conclusao_agente) e seu hash criptográfico são imutáveis após o registro."
+      };
+    }
+  }
+
+  return { valid: true };
 }
 
 /**
@@ -675,3 +726,4 @@ export function validateApuracaoUpdate({ status, conclusaoFinal }) {
   }
   return { valid: true };
 }
+
