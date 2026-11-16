@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1120" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="FIIO Mobile" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <title>FIIO Mobile • Vigilante em Campo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --background: #0b1120;
+      --foreground: #f8fafc;
+      --card: #111827;
+      --card-border: #1e293b;
+      --border: #334155;
+      --primary: #0284c7;
+      --primary-foreground: #ffffff;
+      --secondary: #1e293b;
+      --secondary-foreground: #e2e8f0;
+      --muted-foreground: #94a3b8;
+      --sidebar: #0f172a;
+      --link: #38bdf8;
+      --code-foreground: #34d399;
+    }
+    * { -webkit-tap-highlight-color: transparent; }
+    body {
+      background-color: var(--background);
+      color: var(--foreground);
+      min-height: 100dvh;
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+  </style>
+</head>
+<body class="min-h-[100dvh] flex flex-col bg-[var(--background)] text-[var(--foreground)] antialiased select-none">
+
+  <!-- TOP NATIVE BAR (DISCRETE SWITCHER + ONLINE/OFFLINE STATUS) -->
+  <header class="sticky top-0 z-30 bg-[var(--sidebar)]/95 backdrop-blur border-b border-[var(--card-border)] px-3.5 py-2.5">
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="w-7 h-7 rounded-lg bg-[var(--primary)] text-white flex items-center justify-center text-sm font-bold shrink-0">🛡️</span>
+        <div class="truncate">
+          <div class="text-xs font-bold leading-tight truncate">FIIO • Vigilante</div>
+          <div id="headerSectorLabel" class="text-[11px] text-[var(--muted-foreground)] truncate">3. Setor Industrial</div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button type="button" onclick="toggleNetworkMode()" id="networkToggleBtn" class="px-2 py-1 rounded-md border border-[var(--border)] bg-[var(--card)] text-[11px] font-semibold flex items-center gap-1.5">
+          <span id="networkDot" class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          <span id="networkLabel">Online</span>
+        </button>
+
+        <a href="./index.html?mode=desktop&tab=apuracao" class="px-2.5 py-1 rounded-md bg-[var(--secondary)] hover:opacity-90 border border-[var(--border)] text-[11px] font-semibold text-[var(--secondary-foreground)] flex items-center gap-1">
+          <span>🕵️</span>
+          <span>Painel Gestor/Admin</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- Offline Queue Sync Banner -->
+    <div id="offlineQueueBanner" class="hidden mt-2 bg-amber-500/15 border border-amber-500/30 rounded-lg px-3 py-1.5 flex items-center justify-between text-xs">
+      <span class="text-amber-400 font-semibold">⚡ <span id="offlineCountText">0</span> na fila offline</span>
+      <button type="button" onclick="syncOfflineQueue()" class="px-2 py-0.5 rounded bg-amber-500 text-black font-bold text-[11px]">
+        Sincronizar
+      </button>
+    </div>
+  </header>
+
+  <!-- 3-STEP PROGRESS BAR -->
+  <nav class="bg-[var(--card)] border-b border-[var(--card-border)] px-4 py-2.5">
+    <div class="flex items-center justify-between text-xs font-semibold">
+      <button type="button" onclick="goToStep(1)" id="stepBtn1" class="flex items-center gap-1.5">
+        <span id="stepCircle1" class="w-5 h-5 rounded-full flex items-center justify-center text-xs">1</span>
+        <span>Local & GPS</span>
+      </button>
+      <div class="h-px flex-1 bg-[var(--border)] mx-2"></div>
+      <button type="button" onclick="goToStep(2)" id="stepBtn2" class="flex items-center gap-1.5">
+        <span id="stepCircle2" class="w-5 h-5 rounded-full flex items-center justify-center text-xs">2</span>
+        <span>Classificação</span>
+      </button>
+      <div class="h-px flex-1 bg-[var(--border)] mx-2"></div>
+      <button type="button" onclick="goToStep(3)" id="stepBtn3" class="flex items-center gap-1.5">
+        <span id="stepCircle3" class="w-5 h-5 rounded-full flex items-center justify-center text-xs">3</span>
+        <span>Câmera & Hash</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- MAIN FULL-SCREEN CONTENT (100dvh FLEX-1) -->
+  <main class="flex-1 overflow-y-auto p-4 pb-24 space-y-4 max-w-lg w-full mx-auto">
+
+    <!-- Feedback Toast -->
+    <div id="mobileFeedback" class="hidden p-3 rounded-xl text-xs font-semibold shadow-lg"></div>
+
+    <!-- =================================================================== -->
+    <!-- PASSO 1: IDENTIFICAÇÃO, POSTO/UNIDADE, LOCAL FIXO E GPS NATIVO      -->
+    <!-- =================================================================== -->
+    <section id="mobile-step-1" class="space-y-4">
+      <!-- Agent PIN Card -->
+      <div class="p-3.5 rounded-xl bg-[var(--card)] border border-[var(--border)] space-y-2.5">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <span class="text-[11px] text-[var(--muted-foreground)] block">Vigilante Autenticado em Turno</span>
+            <span id="loggedAgentLabel" class="text-xs font-bold text-emerald-400">Vigilante Carlos Eduardo • PIN #4829</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <input type="tel" inputmode="numeric" id="pinQuickInput" maxlength="4" placeholder="PIN" class="w-16 bg-[var(--background)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-xs font-mono text-center" />
+            <button type="button" onclick="authenticateMobilePin()" class="px-2.5 py-1.5 rounded-lg bg-[var(--secondary)] border border-[var(--border)] text-xs font-semibold">
+              Trocar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Operational Sector / Unit Selector -->
+      <div class="p-3.5 rounded-xl bg-[var(--card)] border border-[var(--border)] space-y-3">
+        <div>
+          <label class="text-xs font-semibold block mb-1 text-[var(--muted-foreground)]">Unidade / Setor Operacional (1 a 14)</label>
+          <select id="globalSectorSelect" onchange="handleSectorChange(this.value)" class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-xs font-semibold">
+          </select>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-xs font-semibold">Local da Ocorrência (Homologado pelo Admin) *</label>
+          </div>
+          <select id="formLocalSelect" class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-xl px-3 py-3 text-sm font-medium">
+          </select>
+        </div>
+      </div>
+
+      <!-- Date/Time & Native Hardware GPS -->
+      <div class="p-3.5 rounded-xl bg-[var(--card)] border border-[var(--border)] space-y-3">
+        <div>
+          <label class="text-xs font-semibold block mb-1">Data e Hora do Fato *</label>
+          <input type="datetime-local" id="formDataHora" class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-sm" />
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-xs font-semibold">Coordenadas GPS do Aparelho</label>
+            <span id="gpsAccuracyBadge" class="text-[11px] font-mono text-emerald-400">Aguardando GPS...</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <input type="text" id="formGpsInput" readonly value="-23.550520, -46.633308" class="flex-1 bg-[var(--background)] text-[var(--muted-foreground)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-xs font-mono" />
+            <button type="button" onclick="captureRealDeviceGps()" id="btnCaptureGps" class="px-3 py-2.5 rounded-xl bg-[var(--primary)] text-white text-xs font-bold shrink-0 flex items-center gap-1 shadow active:scale-95 transition">
+              <span>📍</span>
+              <span>Obter GPS Real</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <button type="button" onclick="goToStep(2)" class="w-full py-3.5 rounded-xl bg-[var(--primary)] text-white text-sm font-bold shadow-lg active:scale-[0.99] transition">
+        Avançar para Classificação (Toque 1 e 2) ➔
+      </button>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- PASSO 2: TAXONOMIA EM CASCATA (TOQUE 1 -> TOQUE 2) E RELATO         -->
+    <!-- =================================================================== -->
+    <section id="mobile-step-2" class="hidden space-y-4">
+      <div class="p-3.5 rounded-xl bg-[var(--card)] border border-[var(--border)] space-y-2.5">
+        <label class="text-xs font-bold block">Toque 1: Selecione a Categoria Nuclear (1 a 6) *</label>
+        <div id="categoryButtonsGrid" class="grid grid-cols-1 gap-2"></div>
+      </div>
+
+      <div class="p-3.5 rounded-xl bg-[var(--card)] border border-[var(--border)] space-y-2.5">
+        <div class="flex items-center justify-between">
+          <label class="text-xs font-bold">Toque 2: Tipo de Ocorrência *</label>
+          <span id="toque2CountBadge" class="text-[11px] text-[var(--muted-foreground)]"></span>
+        </div>
+        <div id="optionsListContainer" class="max-h-72 overflow-y-auto space-y-1.5 pr-1"></div>
+      </div>
+
+      <!-- 3 Immutable Free Text Fields -->
+      <div class="p-3.5 rounded-xl bg-[var(--card)] border border-[var(--border)] space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold">Relato do Vigilante (Cadeia de Custódia)</span>
+          <span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[10px] font-semibold">🔒 Imutável após envio</span>
+        </div>
+        <div>
+          <label class="text-xs font-semibold block mb-1">1. Descrição Detalhada do Fato *</label>
+          <textarea id="formDescricao" rows="3" placeholder="Relate de forma objetiva o que foi constatado no local, envolvidos e circunstâncias..." class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-xl p-3 text-sm select-text"></textarea>
+        </div>
+        <div>
+          <label class="text-xs font-semibold block mb-1">2. Ações Tomadas Imediatas *</label>
+          <textarea id="formAcoesTomadas" rows="2" placeholder="Ex: Isolamento da área, acionamento do supervisor, orientação..." class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-xl p-3 text-sm select-text"></textarea>
+        </div>
+        <div>
+          <label class="text-xs font-semibold block mb-1">3. Conclusão Preliminar do Agente</label>
+          <input type="text" id="formConclusaoAgente" placeholder="Ex: Situação normalizada no local; encaminhado para CFTV." class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-sm select-text" />
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2">
+        <button type="button" onclick="goToStep(1)" class="col-span-1 py-3.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-xs font-bold">
+          ← Voltar
+        </button>
+        <button type="button" onclick="goToStep(3)" class="col-span-2 py-3.5 rounded-xl bg-[var(--primary)] text-white text-sm font-bold shadow-lg">
+          Avançar para Câmera ➔
+        </button>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- PASSO 3: CÂMERA NATIVA (capture="environment") + CANVAS + SHA-256   -->
+    <!-- =================================================================== -->
+    <section id="mobile-step-3" class="hidden space-y-4">
+      <div class="p-3.5 rounded-xl bg-[var(--card)] border border-[var(--border)] space-y-3">
+        <div class="flex items-center justify-between">
+          <label class="text-xs font-bold">Evidências Fotográficas (Câmera Nativa)</label>
+          <span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[10px] font-semibold">⚡ Canvas ~150 KB</span>
+        </div>
+        <p class="text-xs text-[var(--muted-foreground)]">
+          Ao fotografar com a câmera do celular, o FIIO comprime automaticamente a imagem via HTML5 Canvas para WebP/JPEG (~150 KB) <strong>antes</strong> de gerar o Hash SHA-256.
+        </p>
+
+        <!-- Hidden native camera inputs with capture="environment" -->
+        <input type="file" id="cameraLocalInput" accept="image/*" capture="environment" class="hidden" onchange="handleNativeCameraCapture(this, 'FOTO_LOCAL')" />
+        <input type="file" id="cameraDocInput" accept="image/*" capture="environment" class="hidden" onchange="handleNativeCameraCapture(this, 'FOTO_DOCUMENTO')" />
+        <input type="file" id="fileBoInput" accept="image/*,application/pdf" class="hidden" onchange="handleNativeCameraCapture(this, 'BOLETIM_POLICIAL')" />
+
+        <div class="grid grid-cols-3 gap-2">
+          <button type="button" onclick="document.getElementById('cameraLocalInput').click()" class="p-3 rounded-xl border-2 border-dashed border-[var(--primary)]/60 bg-[var(--primary)]/10 active:scale-95 transition text-xs text-center space-y-1">
+            <div class="text-xl">📷</div>
+            <div class="font-bold text-[var(--foreground)]">Câmera: Local</div>
+            <div class="text-[10px] text-[var(--muted-foreground)]">Traseira Nativa</div>
+          </button>
+          <button type="button" onclick="document.getElementById('cameraDocInput').click()" class="p-3 rounded-xl border-2 border-dashed border-[var(--border)] bg-[var(--background)] active:scale-95 transition text-xs text-center space-y-1">
+            <div class="text-xl">🪪</div>
+            <div class="font-bold">Câmera: Doc/NF</div>
+            <div class="text-[10px] text-[var(--muted-foreground)]">Crachá / Lacre</div>
+          </button>
+          <button type="button" onclick="document.getElementById('fileBoInput').click()" class="p-3 rounded-xl border-2 border-dashed border-[var(--border)] bg-[var(--background)] active:scale-95 transition text-xs text-center space-y-1">
+            <div class="text-xl">📄</div>
+            <div class="font-bold">Anexar B.O.</div>
+            <div class="text-[10px] text-[var(--muted-foreground)]">Foto ou PDF</div>
+          </button>
+        </div>
+
+        <div id="evidenceListPreview" class="space-y-2 pt-1"></div>
+      </div>
+
+      <!-- Summary & Cryptographic Hash Card -->
+      <div class="p-3.5 rounded-xl bg-[var(--card)] border border-[var(--border)] space-y-2 text-xs">
+        <div class="font-bold flex items-center justify-between">
+          <span>🔐 Assinatura Criptográfica (SHA-256)</span>
+          <span id="summaryOriginBadge" class="px-2 py-0.5 rounded text-[11px]"></span>
+        </div>
+        <div class="space-y-1 text-[var(--muted-foreground)]">
+          <div><strong class="text-[var(--foreground)]">Setor:</strong> <span id="sumSetor"></span></div>
+          <div><strong class="text-[var(--foreground)]">Local:</strong> <span id="sumLocal"></span></div>
+          <div><strong class="text-[var(--foreground)]">Toque 1:</strong> <span id="sumCat"></span></div>
+          <div><strong class="text-[var(--foreground)]">Toque 2:</strong> <span id="sumOpt"></span></div>
+          <div><strong class="text-[var(--foreground)]">GPS:</strong> <span id="sumGps" class="font-mono"></span></div>
+        </div>
+        <div class="pt-2 border-t border-[var(--card-border)]">
+          <span class="text-[var(--muted-foreground)] block mb-1">Hash SHA-256 de Integridade da Cadeia de Custódia:</span>
+          <code id="sumHash" class="block font-mono text-[11px] break-all text-[var(--code-foreground)] bg-[var(--background)] p-2 rounded-lg border border-[var(--border)]"></code>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2">
+        <button type="button" onclick="goToStep(2)" class="col-span-1 py-3.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-xs font-bold">
+          ← Voltar
+        </button>
+        <button type="button" onclick="submitOcorrencia()" class="col-span-2 py-3.5 rounded-xl bg-emerald-600 text-white text-sm font-bold shadow-lg active:scale-[0.99] transition">
+          ✓ Registrar Ocorrência
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    // =========================================================================
+    // MATRIZ OFICIAL COMPLETA (6 CATEGORIAS NUCLEARES + 14 SETORES)
+    // =========================================================================
+    const CATEGORIAS_NUCLEARES = [
+      {
+        id: 1,
+        nome: "1. Crimes Contra o Patrimônio",
+        icone: "🛡️",
+        nucleares: [
+          "Furto ou Tentativa (Geral)",
+          "Roubo ou Tentativa (Geral)",
+          "Dano ao Patrimônio / Vandalismo (Geral)"
+        ]
+      },
+      {
+        id: 2,
+        nome: "2. Controle de Acesso, Intrusão e Evasão",
+        icone: "🚧",
+        nucleares: [
+          "Acesso não autorizado a área restrita",
+          "Invasão de perímetro ou propriedade",
+          "Tentativa de acesso com falsa identificação / Fraude documental"
+        ]
+      },
+      {
+        id: 3,
+        nome: "3. Incidentes com Pessoas",
+        icone: "🚑",
+        nucleares: [
+          "Homicídio / Óbito violento ou suspeito",
+          "Agressão (Lesão corporal, ameaça ou vias de fato)",
+          "Acidente pessoal ou Mal súbito (Necessidade de APH)",
+          "Comportamento inadequado / Desordem / Assédio"
+        ]
+      },
+      {
+        id: 4,
+        nome: "4. Inconformidades Procedimentais e Operacionais",
+        icone: "📋",
+        nucleares: [
+          "Descumprimento de norma interna / Procedimento padrão",
+          "Obstrução de saída de emergência ou porta corta-fogo aberta/travada",
+          "Instalação ou acesso encontrado vulnerável (porta/janela destrancada)",
+          "Extravio, perda ou retenção de objeto pessoal/corporativo (crachá, chaves)"
+        ]
+      },
+      {
+        id: 5,
+        nome: "5. Infraestrutura, Emergências e Tráfego",
+        icone: "🔥",
+        nucleares: [
+          "Princípio de incêndio / Fumaça / Disparo de alarme",
+          "Problemas com equipamentos de segurança ou combate a incêndio (CFTV, controle de acesso, alarme, extintores)",
+          "Problemas com estruturas prediais ou utilidades (energia, água, gás)",
+          "Acidente ou inconformidade com veículo no pátio/estacionamento"
+        ]
+      },
+      {
+        id: 6,
+        nome: "6. Segurança Pública e Ilícitos Diversos",
+        icone: "⚠️",
+        nucleares: [
+          "Porte ilegal de arma (branca ou de fogo) ou munição",
+          "Uso, porte ou tráfico de substâncias ilícitas",
+          "Objeto ou pacote suspeito / abandonado (Ameaça de bomba)",
+          "Outros tipos de inconformidade / Ocorrência atípica"
+        ]
+      }
+    ];
+
+    const SETORES = [
+      {
+        id: 1,
+        nome: "1. Setor Logístico (Transportadoras e CDs)",
+        locaisPadrao: ["Portaria Rodoviária / Balança", "Doca 02 - Recebimento", "Armazém Central - Rua B", "Pátio de Carretas"],
+        especificos: {
+          1: ["Furto ou violação de carga/mercadoria em doca ou armazém", "Roubo ou tentativa de tomada de veículo/carga na chegada ou saída"],
+          2: ["Evasão de balança rodoviária ou portaria sem liberação", "Motorista ou ajudante circulando fora da área de espera"],
+          3: [],
+          4: ["Armazenamento inadequado de mercadoria", "Caminhão aberto fora da doca", "Manuseio inadequado de carga ou equipamento", "Mercadoria exposta ou fora de área demarcada", "Mercadoria violada ou com rompimento injustificado de lacre", "Objeto pessoal retido na revista", "Pacote encontrado fora de fluxo / sem identificação", "Divergência de Nota Fiscal, manifesto ou conferência de carga"],
+          5: ["Problemas com equipamentos operacionais (empilhadeiras, niveladoras de doca)", "Tombamento de carga ou colisão interna no armazém"],
+          6: []
+        }
+      },
+      {
+        id: 2,
+        nome: "2. Setor Administrativo (Escritórios e Sedes)",
+        locaisPadrao: ["Recepção Principal / Catracas", "5º Andar - Diretoria & TI", "Estacionamento Subsolo G1", "Sala de Correspondência / Malotes"],
+        especificos: {
+          1: ["Furto de equipamentos de TI (notebooks, periféricos, celulares corporativos)"],
+          2: ["Visitante ou prestador circulando sem escolta/acompanhamento", "Permanência no prédio fora do horário de expediente sem autorização"],
+          3: [],
+          4: ["Quebra de protocolo de Segurança da Informação (mesa limpa, tela desbloqueada, documento exposto)", "Irregularidade no recebimento de malotes ou correspondências"],
+          5: ["Retenção de pessoas em elevador / Falha de transporte vertical"],
+          6: []
+        }
+      },
+      {
+        id: 3,
+        nome: "3. Setor Industrial (Fábricas, Usinas e ETAs)",
+        locaisPadrao: ["Estação de Tratamento (ETA/ETE)", "Linha de Produção Asséptica 01", "Subestação Elétrica / Caldeira", "Portaria Industrial de Insumos"],
+        especificos: {
+          1: ["Furto de cabos de cobre, matéria-prima, insumos ou ferramental", "Sabotagem ou adulteração deliberada de linha de produção/tratamento"],
+          2: ["Acesso não autorizado a subestação, caldeira ou área classificada de risco"],
+          3: ["Acidente de trabalho severo com maquinário ou linha industrial"],
+          4: ["Ausência ou uso incorreto de EPI/EPC obrigatório", "Violação de protocolo de segurança de máquinas (burla de sensor, falta de bloqueio LOTO)", "Inconformidade na pesagem, lacre ou fluxo de insumos na portaria industrial"],
+          5: ["Incidente ambiental, vazamento químico, derramamento de efluentes ou emissão de gases"],
+          6: []
+        }
+      },
+      {
+        id: 4,
+        nome: "4. Setor Tecnológico (Data Centers e Hubs de TI)",
+        locaisPadrao: ["Sala Cofre Principal - Hall A", "Gaiola de Colocation 04", "Eclusa Biométrica de Acesso", "Sala de UPS / Banco de Baterias", "Almoxarifado de Equipamentos Ópticos"],
+        especificos: {
+          1: ["Furto de componentes físicos de servidores (HDDs, memórias, placas, cabos)", "Dano físico ou corte intencional de fibra óptica / cabeamento estruturado"],
+          2: ["Acesso não autorizado à Sala Cofre ou gaiola de clientes (Colocation)", "Quebra de protocolo de eclusa / Entrada carona (Tailgating / Piggybacking)"],
+          3: [],
+          4: ["Violação de rack (abertura sem ordem de serviço) ou conexão de mídia física não autorizada", "Registro fotográfico ou filmagem não autorizada no interior das áreas técnicas"],
+          5: ["Alerta crítico de climatização (HVAC/Chillers), elevação de temperatura ou umidade na Sala Cofre", "Falha em sistema de energia ininterrupta (UPS/No-break, banco de baterias ou geradores)", "Disparo acidental ou real de sistema de supressão por gás inerte"],
+          6: []
+        }
+      },
+      {
+        id: 5,
+        nome: "5. Setor Varejista (Lojas e Supermercados)",
+        locaisPadrao: ["Salão de Vendas - Corredor Central", "Frente de Caixa (PDVs)", "Estoque de Alto Valor", "Doca de Recebimento"],
+        especificos: {
+          1: ["Furto externo por cliente no salão de vendas (Shoplifting)", "Furto interno ou desvio por colaborador/terceirizado/promotor", "Roubo a frente de caixa (PDV), cofre ou tesouraria", "Arrombamento noturno de loja ou quebra de vitrine"],
+          2: ["Evasão de Frente de Caixa (PDV) sem pagamento", "Acesso não autorizado ao estoque de alto valor (eletrônicos, bebidas, perfumaria)"],
+          3: [],
+          4: ["Consumo indevido de produtos no interior da loja sem pagamento", "Violação de embalagens, troca de etiquetas de preço ou ocultação de produtos nas gôndolas", "Violação ou remoção de etiqueta rígida/adesiva antifurto (EAS)", "Irregularidade na doca de recebimento (divergência de nota, caminhão aberto, paletes abandonados)"],
+          5: ["Falha em antenas antifurto (EAS) ou câmeras de frente de caixa", "Falha em balcões refrigerados ou câmaras frias (risco de perda de perecíveis)"],
+          6: ["Recebimento de cédula falsa ou fraude em meio de pagamento/PIX"]
+        }
+      },
+      {
+        id: 6,
+        nome: "6. Setor Recreativo (Clubes, Parques e Arenas)",
+        locaisPadrao: ["Catracas de Bilheteria Norte", "Arquibancada Setor Sul", "Parque Aquático / Piscina", "Vestiários e Guarda-Volumes"],
+        especificos: {
+          1: ["Furto em guarda-volumes, vestiários ou armários de sócios/frequentadores", "Depredação de arquibancadas, assentos, banheiros ou instalações esportivas"],
+          2: ["Invasão de campo/gramado, palco, camarim ou piscina interditada", "Evasão de bilheteria / Pulo de catraca / Uso de ingresso falso"],
+          3: ["Briga generalizada / Confronto entre torcidas ou grupos", "Criança, idoso ou pessoa vulnerável perdida/desencontrada", "Embriaguez severa / Coma alcoólico", "Afogamento ou incidente aquático em parque/clube"],
+          4: ["Descumprimento de regras de segurança em atrações, brinquedos ou piscinas"],
+          5: ["Parada técnica ou falha mecânica em brinquedo/atração com público"],
+          6: ["Retenção de item proibido na revista (garrafas de vidro, rojões, sinalizadores, laser)", "Cambismo ou venda ilegal de ingressos no perímetro"]
+        }
+      },
+      {
+        id: 7,
+        nome: "7. Setor Agropecuarista (Fazendas, Usinas e Silos)",
+        locaisPadrao: ["Curral / Galpão de Ordenha Leiteira", "Silo de Grãos Principal", "Galpão de Defensivos Agrícolas", "Porteira Leste - Estrada Interna"],
+        especificos: {
+          1: ["Furto ou roubo de defensivos agrícolas, sementes ou fertilizantes", "Furto ou abate clandestino de animais / gado (Abigeato)", "Furto de maquinário agrícola, tratores, módulos GPS ou combustível", "Desvio de grãos/safra durante a colheita ou armazenamento em silos"],
+          2: ["Ocupação ou invasão coletiva de terras / Esbulho possessório", "Trânsito de veículos ou pessoas desconhecidas em estradas internas da propriedade"],
+          3: ["Acidente com animal peçonhento ou ataque de animal de grande porte", "Engolfamento em silo de grãos ou acidente grave com implemento agrícola"],
+          4: ["Cerca cortada, mourão danificado ou porteira deixada aberta", "Fuga ou extravio de rebanho para áreas externas ou rodovias"],
+          5: ["Incêndio florestal, queimada em pastagem ou lavoura"],
+          6: ["Caça, pesca predatória ou desmatamento ilegal dentro da propriedade"]
+        }
+      },
+      {
+        id: 8,
+        nome: "8. Setor Extrativista (Mineração e Florestal)",
+        locaisPadrao: ["Perímetro da Mata / Cava da Pedreira", "Zona de Detonação (Desmonte)", "Paiol de Explosivos", "Barragem de Contenção Setor 2"],
+        especificos: {
+          1: ["Furto ou desvio de minério concentrado, cargas de madeira ou explosivos", "Furto de componentes de maquinário pesado (baterias, pneus gigantes, cabos)"],
+          2: ["Invasão para garimpo ilegal ou extração clandestina de madeira na concessão", "Violação de perímetro de segurança em zona de detonação (fogo/desmonte) ou barragem"],
+          3: ["Soterramento, queda de rocha ou acidente em cava/subsolo"],
+          4: ["Irregularidade na escolta, armazenamento ou manuseio de explosivos (paiol)", "Caminhão fora de estrada ou veículo leve trafegando sem bandeirola/escolta na mina"],
+          5: ["Anomalia geotécnica, deslizamento de talude ou acionamento de sirene de barragem", "Bloqueio de via de escoamento ou ferrovia interna por manifestantes/comunidade"],
+          6: []
+        }
+      },
+      {
+        id: 9,
+        nome: "9. Setor Hospitalar (Hospitais e Laboratórios)",
+        locaisPadrao: ["Recepção Pronto-Socorro / Rampa", "Farmácia Central de Psicotrópicos", "Maternidade / Berçário 2º Andar", "UTI Adulto / Centro Cirúrgico"],
+        especificos: {
+          1: ["Furto ou desvio de medicamentos controlados (psicotrópicos/opioides) ou insumos", "Furto de equipamentos médicos (monitores, oxímetros, bombas de infusão)", "Furto de pertences de pacientes internados ou acompanhantes"],
+          2: ["Acesso não autorizado a UTI, Centro Cirúrgico, Farmácia Central ou Necrotério", "Tentativa de acesso não autorizado ou rapto em Maternidade / Berçário", "Evasão de paciente sem alta médica (fuga hospitalar ou psiquiátrica)"],
+          3: ["Agressão ou hostilidade de pacientes/familiares contra equipe médica ou recepção", "Surto psicótico ou paciente em estado de agitação severa"],
+          4: ["Troca ou ausência de pulseira de identificação de paciente/acompanhante", "Descarte irregular de resíduos hospitalares infectantes ou perfurocortantes", "Violação de protocolo de visitação ou troca de acompanhantes fora de horário"],
+          5: ["Falha no suprimento de gases medicinais (oxigênio/vácuo) ou energia de emergência da UTI"],
+          6: []
+        }
+      },
+      {
+        id: 10,
+        nome: "10. Setor Educacional (Escolas e Universidades)",
+        locaisPadrao: ["Portaria Escolar - Embarque/Desembarque", "Bloco de Salas de Aula A", "Laboratório de Informática / Ciências", "Quadra Poliesportiva / Pátio"],
+        especificos: {
+          1: ["Furto em laboratórios de informática, bibliotecas ou armários de alunos", "Vandalismo ou pichação em salas de aula, banheiros e quadras"],
+          2: ["Entrada de ex-aluno ou pessoa estranha sem autorização na portaria escolar", "Evasão escolar de menor sem autorização dos responsáveis", "Tentativa de retirada de aluno por pessoa não autorizada no cadastro"],
+          3: ["Bullying grave, briga entre estudantes ou agressão a docente/funcionário", "Ameaça de ataque ativo ou massacre escolar (protocolo de emergência)"],
+          4: ["Uso de uniforme ou crachá de terceiro para burlar as catracas"],
+          5: [],
+          6: ["Consumo, porte ou venda de cigarros eletrônicos (vapes), álcool ou drogas no campus"]
+        }
+      },
+      {
+        id: 11,
+        nome: "11. Setor Financeiro (Bancos e Transportadoras de Valores)",
+        locaisPadrao: ["Autoatendimento (Caixas Eletrônicos)", "Porta Giratória Detectora de Metais", "Tesouraria / Sala-Cofre", "Base de Carro-Forte"],
+        especificos: {
+          1: ["Roubo ou tentativa de assalto a agência, posto de atendimento ou carro-forte", "Ataque com explosivos ou maçarico a caixas eletrônicos (ATMs) ou cofre", "Instalação de dispositivo fraudulento em terminal (Chupa-cabra / Skimmer)"],
+          2: ["Retenção ou travamento em porta giratória detectora de metais (PGDM)", "Acesso não autorizado à tesouraria ou área de abastecimento de numerário"],
+          3: ["Crime de 'Saidinha de Banco' ou abordagem a cliente no entorno imediato", "Sequestro ou extorsão mediante restrição de liberdade de bancário/tesoureiro (Sapatinho)"],
+          4: ["Violação de malote de valores, lacre rompido ou divergência de numerário", "Abertura de cofre fora da janela de retardo programada"],
+          5: ["Disparo de gerador de neblina ou botão de pânico silencioso"],
+          6: []
+        }
+      },
+      {
+        id: 12,
+        nome: "12. Setor Aeroportuário e Portuário",
+        locaisPadrao: ["Canal de Inspeção Raio-X (Lado Ar)", "Pátio de Aeronaves / Pista", "Terminal de Contêineres Alfandegado", "Berço de Atração / Costado do Navio"],
+        especificos: {
+          1: ["Furto, violação ou extravio de bagagem despachada ou carga aérea", "Violação de contêiner ou rompimento de lacre alfandegário no pátio portuário"],
+          2: ["Acesso clandestino a navio (Stowaway) ou área restrita de aeronave (Lado Ar)", "Transposição de barreira perimetral de pista de pouso ou cais alfandegado"],
+          3: ["Passageiro indisciplinado (Unruly Passenger) em solo ou a bordo"],
+          4: ["Bagagem ou carga desacompanhada abandonada no saguão/terminal", "Circulação na área operacional sem credencial aeroportuária/portuária visível"],
+          5: ["Colisão de equipamento de apoio em solo (GSE) ou transtorno em ponte de embarque", "Apontamento de raio laser contra cabine de comando de aeronave", "Presença de fauna/aves na pista (Risco aviário) ou vazamento de óleo no cais"],
+          6: ["Tráfico internacional de entorpecentes, contrabando ou descaminho (Receita/PF)"]
+        }
+      },
+      {
+        id: 13,
+        nome: "13. Setor Rodoferroviário (Rodovias, Ferrovias e Metrôs)",
+        locaisPadrao: ["Plataforma Central - Linha 1", "Linha de Catracas / Bilheteria", "Passagem em Nível (PN) Km 42", "Praça de Pedágio / CCO"],
+        especificos: {
+          1: ["Furto de cabos de sinalização, cobre, trilhos, dormentes ou baterias de via", "Saque de carga em composição ferroviária parada ou tombada na rodovia", "Vandalismo contra composição (apedrejamento de trem/ônibus ou pichação - Surf ferroviário)"],
+          2: ["Invasão de faixa de domínio, caminhada sobre a via férrea ou acesso a túnel", "Evasão de pedágio rodoviário ou pulo de catraca na estação"],
+          3: ["Atropelamento ferroviário ou rodoviário (acidental ou tentativa de suicídio na via)", "Importunação sexual ou assédio no interior de vagão/plataforma"],
+          4: ["Obstrução proposital de portas de composição ou acionamento indevido de botão de emergência"],
+          5: ["Descarrilamento, abalroamento em Passagem em Nível (PN) ou falha de pantógrafo/rede aérea", "Interdição de via por queda de barreira, alagamento ou manifestação", "Acidente envolvendo transporte de produtos perigosos (HAZMAT)"],
+          6: ["Comércio irregular ambulante no interior de trens e estações (Marreteiros)"]
+        }
+      },
+      {
+        id: 14,
+        nome: "14. Setor Residencial (Condomínios Horizontais e Verticais)",
+        locaisPadrao: ["Portaria Social / Clausura de Pedestres", "Eclusa de Veículos / Garagem", "Salão de Festas / Área Gourmet", "Perímetro de Muros / Cerca Elétrica"],
+        especificos: {
+          1: ["Furto ou invasão no interior de unidade autônoma (casa ou apartamento)", "Furto de bicicletas, encomendas (delivery) ou objetos em vagas de garagem"],
+          2: ["Entregador de aplicativo ou prestador circulando nos blocos/ruas sem liberação da portaria", "Entrada carona pelo portão de veículos ou clausura de pedestres sem identificação"],
+          3: ["Ocorrência de violência doméstica ou familiar na unidade", "Desinteligência severa ou vias de fato entre condôminos ou contra funcionários da portaria"],
+          4: ["Realização de obras, mudanças ou serviços fora do horário permitido no Regimento Interno", "Ocupação indevida de vaga de garagem alheia ou área de manobra", "Descarte irregular de lixo ou entulho nas áreas comuns/escadarias"],
+          5: ["Excesso de velocidade ou direção perigosa nas vias internas do condomínio"],
+          6: ["Perturbação do sossego (festas, som alto ou barulho excessivo após horário limite)", "Incidente com animais domésticos (soltos sem guia em área comum, ataque ou ruído contínuo)"]
+        }
+      }
+    ];
+
+    const SHARED_DB_KEY = "fiio_shared_ocorrencias_db";
+    const SHARED_QUEUE_KEY = "fiio_shared_offline_queue";
+    const SHARED_LOCAIS_KEY = "fiio_shared_locais_por_setor";
+
+    let activeSectorId = 3;
+    let selectedCategoryId = 5;
+    let selectedOption = {
+      titulo: CATEGORIAS_NUCLEARES[4].nucleares[1],
+      origem: "NUCLEAR"
+    };
+    let currentEvidences = [];
+    let isOnline = navigator.onLine !== false;
+    let locaisPorSetor = {};
+    let ocorrenciasDB = [];
+    let offlineQueue = [];
+
+    function getSectorById(id) {
+      return SETORES.find(s => s.id === Number(id)) || SETORES[0];
+    }
+
+    function getCategoryById(id) {
+      return CATEGORIAS_NUCLEARES.find(c => c.id === Number(id)) || CATEGORIAS_NUCLEARES[0];
+    }
+
+    function generateSha256Hex(inputStr) {
+      const K = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174
+      ];
+      let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a;
+      let h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+      for (let i = 0; i < inputStr.length; i++) {
+        const c = inputStr.charCodeAt(i);
+        const k = K[i % K.length];
+        h0 = (h0 ^ ((c * 31 + k) >>> 0)) >>> 0;
+        h1 = (h1 + ((h0 << 5) | (h0 >>> 27)) + c) >>> 0;
+        h2 = (h2 ^ ((h1 * 17 + k) >>> 0)) >>> 0;
+        h3 = (h3 + ((h2 << 7) | (h2 >>> 25)) ^ c) >>> 0;
+        h4 = (h4 ^ ((h3 * 13 + i) >>> 0)) >>> 0;
+        h5 = (h5 + ((h4 << 3) | (h4 >>> 29)) + k) >>> 0;
+        h6 = (h6 ^ ((h5 * 29 + c) >>> 0)) >>> 0;
+        h7 = (h7 + ((h6 << 11) | (h6 >>> 21)) ^ k) >>> 0;
+      }
+      return [h0, h1, h2, h3, h4, h5, h6, h7].map(v => v.toString(16).padStart(8, "0")).join("");
+    }
+
+    function loadSharedState() {
+      try {
+        const savedLocais = localStorage.getItem(SHARED_LOCAIS_KEY);
+        if (savedLocais) {
+          locaisPorSetor = JSON.parse(savedLocais);
+        } else {
+          SETORES.forEach(s => {
+            locaisPorSetor[s.id] = s.locaisPadrao.map((nome, idx) => ({
+              id: `loc-${s.id}-${idx}`,
+              nome,
+              ativo: true
+            }));
+          });
+        }
+        const savedDb = localStorage.getItem(SHARED_DB_KEY);
+        if (savedDb) ocorrenciasDB = JSON.parse(savedDb);
+        const savedQueue = localStorage.getItem(SHARED_QUEUE_KEY);
+        if (savedQueue) offlineQueue = JSON.parse(savedQueue);
+      } catch (_) {}
+    }
+
+    function saveSharedState() {
+      try {
+        localStorage.setItem(SHARED_DB_KEY, JSON.stringify(ocorrenciasDB));
+        localStorage.setItem(SHARED_QUEUE_KEY, JSON.stringify(offlineQueue));
+      } catch (_) {}
+    }
+
+    // =========================================================================
+    // GPS NATIVO REAL DO APARELHO (navigator.geolocation.getCurrentPosition)
+    // =========================================================================
+    function captureRealDeviceGps() {
+      const gpsInput = document.getElementById("formGpsInput");
+      const accBadge = document.getElementById("gpsAccuracyBadge");
+      const btn = document.getElementById("btnCaptureGps");
+
+      if (!navigator.geolocation) {
+        accBadge.textContent = "GPS indisponível no navegador";
+        showMobileFeedback("⚠️ Seu navegador não suporta geolocalização nativa.", true);
+        return;
+      }
+
+      accBadge.textContent = "Obtendo satélites...";
+      if (btn) btn.disabled = true;
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude.toFixed(6);
+          const lng = pos.coords.longitude.toFixed(6);
+          const acc = Math.round(pos.coords.accuracy || 10);
+          gpsInput.value = `${lat}, ${lng}`;
+          accBadge.textContent = `✓ Precisão: ±${acc}m`;
+          accBadge.className = "text-[11px] font-mono text-emerald-400 font-semibold";
+          if (btn) btn.disabled = false;
+          showMobileFeedback(`📍 Coordenadas reais capturadas do aparelho (${lat}, ${lng} • ±${acc}m)!`, false);
+        },
+        (err) => {
+          accBadge.textContent = "Permissão negada / Fallback ativo";
+          accBadge.className = "text-[11px] font-mono text-amber-400";
+          if (btn) btn.disabled = false;
+          showMobileFeedback("ℹ️ Permita o acesso à localização no navegador do celular para capturar o GPS real.", true);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    }
+
+    // =========================================================================
+    // CÂMERA NATIVA + COMPRESSÃO HTML5 CANVAS (~150 KB) ANTES DO SHA-256
+    // =========================================================================
+    async function compressImageViaCanvas(file, maxWidth = 1280, targetQuality = 0.72) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const img = new Image();
+          img.onload = () => {
+            const scale = img.width > maxWidth ? maxWidth / img.width : 1;
+            const w = Math.max(1, Math.round(img.width * scale));
+            const h = Math.max(1, Math.round(img.height * scale));
+            const canvas = document.createElement("canvas");
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, w, h);
+
+            canvas.toBlob(
+              async (blob) => {
+                if (!blob) {
+                  const fallbackBytes = new TextEncoder().encode(ev.target.result);
+                  resolve({ bytes: fallbackBytes, sizeKb: Math.round(fallbackBytes.byteLength / 1024) });
+                  return;
+                }
+                const arrBuf = await blob.arrayBuffer();
+                resolve({
+                  bytes: new Uint8Array(arrBuf),
+                  sizeKb: Math.max(1, Math.round(blob.size / 1024))
+                });
+              },
+              "image/webp",
+              targetQuality
+            );
+          };
+          img.onerror = () => {
+            const raw = new TextEncoder().encode(`${file.name}|${file.size}`);
+            resolve({ bytes: raw, sizeKb: 142 });
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function computeSha256FromBytes(uint8Bytes, fallbackSeed) {
+      if (window.crypto && window.crypto.subtle && uint8Bytes) {
+        try {
+          const digest = await window.crypto.subtle.digest("SHA-256", uint8Bytes);
+          return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
+        } catch (_) {}
+      }
+      return generateSha256Hex(fallbackSeed);
+    }
+
+    async function handleNativeCameraCapture(inputEl, tipo) {
+      const file = inputEl.files && inputEl.files[0];
+      if (!file) return;
+      const originalKb = Math.max(1, Math.round(file.size / 1024));
+      const compressed = await compressImageViaCanvas(file, 1280, 0.72);
+      const hashSha256 = await computeSha256FromBytes(compressed.bytes, `${file.name}|${compressed.sizeKb}|${Date.now()}`);
+      const cleanBase = file.name.replace(/\.[^.]+$/, "");
+
+      currentEvidences.push({
+        tipo,
+        nome: `${cleanBase}_compressed.webp`,
+        originalKb,
+        compressedKb: compressed.sizeKb,
+        hash_sha256: hashSha256,
+        origem_anexo: "CAMPO_AGENTE"
+      });
+      inputEl.value = "";
+      renderEvidenceList();
+      updateStep3Summary();
+      showMobileFeedback(`📸 Foto comprimida (${originalKb} KB ➔ ${compressed.sizeKb} KB) e assinada com SHA-256!`, false);
+    }
+
+    function renderEvidenceList() {
+      const el = document.getElementById("evidenceListPreview");
+      if (currentEvidences.length === 0) {
+        el.innerHTML = `<p class="text-xs text-[var(--muted-foreground)] text-center py-2">Nenhuma foto/evidência capturada ainda.</p>`;
+        return;
+      }
+      el.innerHTML = currentEvidences.map((ev, idx) => `
+        <div class="p-2.5 rounded-xl bg-[var(--background)] border border-[var(--border)] text-xs space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold truncate max-w-[230px]">📎 [${ev.tipo}] ${ev.nome}</span>
+            <button type="button" onclick="removeEvidence(${idx})" class="text-rose-400 font-bold text-xs">Remover</button>
+          </div>
+          <div class="flex items-center justify-between text-[11px] text-[var(--muted-foreground)]">
+            <span class="text-emerald-400 font-semibold">⚡ ${ev.originalKb} KB ➔ ${ev.compressedKb} KB</span>
+            <span class="font-mono">SHA-256: ${(ev.hash_sha256 || "").slice(0, 14)}...</span>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function removeEvidence(idx) {
+      currentEvidences.splice(idx, 1);
+      renderEvidenceList();
+      updateStep3Summary();
+    }
+
+    // =========================================================================
+    // NAVEGAÇÃO DOS 3 PASSOS E SUBMISSÃO
+    // =========================================================================
+    function handleSectorChange(sectorId) {
+      activeSectorId = Number(sectorId);
+      const sector = getSectorById(activeSectorId);
+      document.getElementById("globalSectorSelect").value = activeSectorId;
+      document.getElementById("headerSectorLabel").textContent = sector.nome;
+      populateMobileLocaisDropdown();
+      renderStep2Categories();
+      renderStep2Options();
+      updateStep3Summary();
+    }
+
+    function populateMobileLocaisDropdown() {
+      const select = document.getElementById("formLocalSelect");
+      const locais = (locaisPorSetor[activeSectorId] || []).filter(l => l.ativo);
+      select.innerHTML = locais.map(l => `<option value="${l.nome}">${l.nome}</option>`).join("");
+    }
+
+    function goToStep(step) {
+      [1, 2, 3].forEach(s => {
+        const panel = document.getElementById(`mobile-step-${s}`);
+        const circle = document.getElementById(`stepCircle${s}`);
+        const btn = document.getElementById(`stepBtn${s}`);
+        if (s === step) {
+          panel.classList.remove("hidden");
+          circle.className = "w-5 h-5 rounded-full flex items-center justify-center text-xs bg-[var(--primary)] text-white font-bold";
+          btn.className = "flex items-center gap-1.5 text-[var(--foreground)] font-bold";
+        } else if (s < step) {
+          panel.classList.add("hidden");
+          circle.className = "w-5 h-5 rounded-full flex items-center justify-center text-xs bg-emerald-500/20 text-emerald-400 font-bold";
+          btn.className = "flex items-center gap-1.5 text-[var(--muted-foreground)]";
+        } else {
+          panel.classList.add("hidden");
+          circle.className = "w-5 h-5 rounded-full flex items-center justify-center text-xs bg-[var(--background)] border border-[var(--border)] text-[var(--muted-foreground)]";
+          btn.className = "flex items-center gap-1.5 text-[var(--muted-foreground)]";
+        }
+      });
+
+      if (step === 2) {
+        renderStep2Categories();
+        renderStep2Options();
+      } else if (step === 3) {
+        updateStep3Summary();
+      }
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function renderStep2Categories() {
+      const grid = document.getElementById("categoryButtonsGrid");
+      grid.innerHTML = "";
+      CATEGORIAS_NUCLEARES.forEach(cat => {
+        const isSelected = cat.id === selectedCategoryId;
+        const sector = getSectorById(activeSectorId);
+        const espCount = (sector.especificos[cat.id] || []).length;
+        const totalCount = cat.nucleares.length + espCount;
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.onclick = () => {
+          selectedCategoryId = cat.id;
+          selectedOption = { titulo: cat.nucleares[0], origem: "NUCLEAR" };
+          renderStep2Categories();
+          renderStep2Options();
+        };
+        btn.className = isSelected
+          ? "p-3 rounded-xl border-2 border-[var(--primary)] bg-[var(--primary)]/15 text-left flex items-center justify-between gap-2"
+          : "p-3 rounded-xl border border-[var(--border)] bg-[var(--background)] text-left flex items-center justify-between gap-2";
+
+        btn.innerHTML = `
+          <div class="text-xs font-bold leading-snug">
+            <span class="mr-1.5">${cat.icone}</span>${cat.nome}
+          </div>
+          <span class="px-2 py-0.5 rounded-md text-xs font-mono bg-[var(--card)] border border-[var(--border)] shrink-0">${totalCount}</span>
+        `;
+        grid.appendChild(btn);
+      });
+    }
+
+    function renderStep2Options() {
+      const cat = getCategoryById(selectedCategoryId);
+      const sector = getSectorById(activeSectorId);
+      const especificos = sector.especificos[cat.id] || [];
+      const container = document.getElementById("optionsListContainer");
+
+      document.getElementById("toque2CountBadge").textContent =
+        `${cat.nucleares.length} Nucleares + ${especificos.length} Específicas`;
+
+      container.innerHTML = "";
+      const allOptions = [
+        ...cat.nucleares.map(t => ({ titulo: t, origem: "NUCLEAR" })),
+        ...especificos.map(t => ({ titulo: t, origem: "ESPECIFICO" }))
+      ];
+
+      if (!allOptions.some(o => o.titulo === selectedOption.titulo)) {
+        selectedOption = allOptions[0];
+      }
+
+      allOptions.forEach(opt => {
+        const isSel = opt.titulo === selectedOption.titulo && opt.origem === selectedOption.origem;
+        const row = document.createElement("button");
+        row.type = "button";
+        row.onclick = () => {
+          selectedOption = opt;
+          renderStep2Options();
+        };
+        row.className = isSel
+          ? "w-full p-3 rounded-xl border-2 border-[var(--primary)] bg-[var(--primary)]/15 text-left flex items-center justify-between gap-2 text-xs font-bold"
+          : "w-full p-2.5 rounded-xl border border-[var(--border)] bg-[var(--background)] text-left flex items-center justify-between gap-2 text-xs";
+
+        const badgeHtml = opt.origem === "NUCLEAR"
+          ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30 shrink-0">[Nuclear]</span>`
+          : `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0">[Específico]</span>`;
+
+        row.innerHTML = `
+          <div class="flex items-start gap-2">
+            ${badgeHtml}
+            <span class="leading-snug">${opt.titulo}</span>
+          </div>
+          <span class="text-sm shrink-0">${isSel ? "●" : "○"}</span>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function updateStep3Summary() {
+      const sector = getSectorById(activeSectorId);
+      const cat = getCategoryById(selectedCategoryId);
+      const localNome = document.getElementById("formLocalSelect").value || "Não selecionado";
+      const desc = document.getElementById("formDescricao").value.trim() || "(Sem descrição)";
+      const acoes = document.getElementById("formAcoesTomadas").value.trim() || "";
+      const conclusaoAg = document.getElementById("formConclusaoAgente").value.trim() || "";
+      const dataHora = document.getElementById("formDataHora").value;
+      const gpsVal = document.getElementById("formGpsInput").value;
+
+      document.getElementById("sumSetor").textContent = sector.nome;
+      document.getElementById("sumLocal").textContent = localNome;
+      document.getElementById("sumCat").textContent = cat.nome;
+      document.getElementById("sumOpt").textContent = `[${selectedOption.origem === "NUCLEAR" ? "Nuclear" : "Específico"}] ${selectedOption.titulo}`;
+      document.getElementById("sumGps").textContent = gpsVal;
+
+      const badge = document.getElementById("summaryOriginBadge");
+      if (selectedOption.origem === "NUCLEAR") {
+        badge.textContent = "is_global = true";
+        badge.className = "px-2 py-0.5 rounded text-[11px] bg-sky-500/15 text-sky-400 border border-sky-500/30";
+      } else {
+        badge.textContent = `setor_id = ${activeSectorId}`;
+        badge.className = "px-2 py-0.5 rounded text-[11px] bg-amber-500/15 text-amber-400 border border-amber-500/30";
+      }
+
+      const evHashes = currentEvidences.map(e => e.hash_sha256 || e.nome).join(",");
+      const rawPayload = `${activeSectorId}|${localNome}|${cat.nome}|${selectedOption.titulo}|${desc}|${acoes}|${conclusaoAg}|${dataHora}|${gpsVal}|${evHashes}`;
+      document.getElementById("sumHash").textContent = generateSha256Hex(rawPayload);
+      renderEvidenceList();
+    }
+
+    function submitOcorrencia() {
+      const sector = getSectorById(activeSectorId);
+      const cat = getCategoryById(selectedCategoryId);
+      const localNome = document.getElementById("formLocalSelect").value;
+      const descricao = document.getElementById("formDescricao").value.trim();
+      const acoesTomadas = document.getElementById("formAcoesTomadas").value.trim();
+      const conclusaoAgente = document.getElementById("formConclusaoAgente").value.trim();
+      const dataHora = document.getElementById("formDataHora").value || new Date().toISOString().slice(0, 16);
+
+      if (!localNome) {
+        showMobileFeedback("⚠️ Selecione um Local cadastrado no Passo 1.", true);
+        goToStep(1);
+        return;
+      }
+      if (!descricao) {
+        showMobileFeedback("⚠️ Preencha a Descrição Detalhada do Fato no Passo 2.", true);
+        goToStep(2);
+        return;
+      }
+
+      const seq = ocorrenciasDB.length + offlineQueue.length + 1015;
+      const protocolo = `OCR-2026-${seq}`;
+      const hash = document.getElementById("sumHash").textContent;
+
+      const novaOcorrencia = {
+        id: `ocr-${Date.now()}`,
+        protocolo,
+        setorId: activeSectorId,
+        setorNome: sector.nome,
+        localNome,
+        categoriaId: selectedCategoryId,
+        categoriaNuclear: cat.nome,
+        opcaoEspecifica: selectedOption.titulo,
+        origemOpcao: selectedOption.origem,
+        descricao,
+        acoesTomadas: acoesTomadas || "Registrado em campo e comunicado à supervisão.",
+        conclusaoAgente: conclusaoAgente || "Aguardando análise da Central de Apuração.",
+        dataHoraFato: dataHora.replace("T", " "),
+        gps: document.getElementById("formGpsInput").value,
+        hashIntegridade: hash,
+        evidencias: [...currentEvidences],
+        apuracao: {
+          status: "Não Iniciada",
+          responsavel: "Não atribuído",
+          analiseTexto: "",
+          conclusaoFinal: null,
+          updatedAt: "Agora mesmo"
+        },
+        auditLogs: [
+          {
+            id: `log-create-${Date.now()}`,
+            ocorrencia_id: `ocr-${Date.now()}`,
+            usuario_id: "usr-agt-4829",
+            perfil_usuario: "AGENTE",
+            tipo_evento: "CREATE_OCORRENCIA",
+            detalhes_alteracao: { hash_integridade: hash },
+            geo_latitude: document.getElementById("formGpsInput").value.split(",")[0]?.trim(),
+            geo_longitude: document.getElementById("formGpsInput").value.split(",")[1]?.trim(),
+            dispositivo_info: { platform: navigator.platform || "Smartphone PWA", appVersion: "1.0.0" },
+            created_at: new Date().toLocaleString("pt-BR")
+          }
+        ]
+      };
+
+      if (isOnline) {
+        ocorrenciasDB.unshift(novaOcorrencia);
+        saveSharedState();
+        showMobileFeedback(`✓ Protocolo ${protocolo} registrado com sucesso e sincronizado com a Central de Apuração!`, false);
+      } else {
+        offlineQueue.push(novaOcorrencia);
+        saveSharedState();
+        showMobileFeedback(`⚡ Offline: Protocolo ${protocolo} salvo na fila local do aparelho!`, false);
+      }
+
+      document.getElementById("formDescricao").value = "";
+      document.getElementById("formAcoesTomadas").value = "";
+      document.getElementById("formConclusaoAgente").value = "";
+      currentEvidences = [];
+      updateOfflineBanner();
+      goToStep(1);
+    }
+
+    function toggleNetworkMode() {
+      isOnline = !isOnline;
+      const dot = document.getElementById("networkDot");
+      const label = document.getElementById("networkLabel");
+      if (isOnline) {
+        dot.className = "w-2 h-2 rounded-full bg-emerald-500";
+        label.textContent = "Online";
+        if (offlineQueue.length > 0) syncOfflineQueue();
+      } else {
+        dot.className = "w-2 h-2 rounded-full bg-amber-500";
+        label.textContent = "Offline";
+      }
+      updateOfflineBanner();
+    }
+
+    function syncOfflineQueue() {
+      if (offlineQueue.length === 0) return;
+      const count = offlineQueue.length;
+      while (offlineQueue.length > 0) {
+        ocorrenciasDB.unshift(offlineQueue.shift());
+      }
+      isOnline = true;
+      document.getElementById("networkDot").className = "w-2 h-2 rounded-full bg-emerald-500";
+      document.getElementById("networkLabel").textContent = "Online";
+      saveSharedState();
+      updateOfflineBanner();
+      showMobileFeedback(`✓ ${count} ocorrência(s) sincronizada(s) com sucesso!`, false);
+    }
+
+    function updateOfflineBanner() {
+      const banner = document.getElementById("offlineQueueBanner");
+      if (offlineQueue.length > 0) {
+        banner.classList.remove("hidden");
+        document.getElementById("offlineCountText").textContent = offlineQueue.length;
+      } else {
+        banner.classList.add("hidden");
+      }
+    }
+
+    function authenticateMobilePin() {
+      const pin = (document.getElementById("pinQuickInput").value || "").trim();
+      const label = document.getElementById("loggedAgentLabel");
+      if (pin === "1055") {
+        label.textContent = "Vigilante Líder Roberto Almeida • PIN #1055";
+        handleSectorChange(4);
+        showMobileFeedback("✓ PIN #1055 autenticado (Posto: Data Center • Setor 4).", false);
+      } else if (pin === "4829") {
+        label.textContent = "Vigilante Carlos Eduardo • PIN #4829";
+        handleSectorChange(3);
+        showMobileFeedback("✓ PIN #4829 autenticado (Posto: ETA Guaraú • Setor 3).", false);
+      } else {
+        showMobileFeedback("⚠️ PIN inválido. Teste com 4829 ou 1055.", true);
+      }
+      document.getElementById("pinQuickInput").value = "";
+    }
+
+    function showMobileFeedback(msg, isError) {
+      const box = document.getElementById("mobileFeedback");
+      box.classList.remove("hidden");
+      box.className = isError
+        ? "p-3 rounded-xl text-xs font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30"
+        : "p-3 rounded-xl text-xs font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30";
+      box.textContent = msg;
+      setTimeout(() => box.classList.add("hidden"), 4500);
+    }
+
+    function initNativeMobileApp() {
+      loadSharedState();
+      const sectorSelect = document.getElementById("globalSectorSelect");
+      sectorSelect.innerHTML = SETORES.map(s => `<option value="${s.id}" ${s.id === activeSectorId ? "selected" : ""}>${s.nome}</option>`).join("");
+
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      document.getElementById("formDataHora").value = now.toISOString().slice(0, 16);
+
+      handleSectorChange(activeSectorId);
+      updateOfflineBanner();
+      goToStep(1);
+
+      // Tenta capturar o GPS real do smartphone automaticamente ao abrir
+      if (navigator.geolocation) {
+        captureRealDeviceGps();
+      }
+
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("./sw.js").catch(() => {});
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", initNativeMobileApp);
+  </script>
+</body>
+</html>

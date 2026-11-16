@@ -1,8 +1,10 @@
-const CACHE_NAME = "fiio-pwa-cache-v1";
+const CACHE_NAME = "fiio-pwa-cache-v2";
 const ASSETS_TO_CACHE = [
-  "/",
-  "/index.html",
-  "/manifest.webmanifest"
+  "./",
+  "./index.html",
+  "./app.html",
+  "./manifest.webmanifest",
+  "./setup_byodb_completo.sql"
 ];
 
 self.addEventListener("install", (event) => {
@@ -27,7 +29,7 @@ self.addEventListener("fetch", (event) => {
     caches.match(event.request).then((cached) => {
       return (
         cached ||
-        fetch(event.request).catch(() => caches.match("/index.html"))
+        fetch(event.request).catch(() => caches.match("./app.html"))
       );
     })
   );

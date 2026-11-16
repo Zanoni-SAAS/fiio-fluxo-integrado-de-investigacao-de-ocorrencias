@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "name": "fiio-fluxo-integrado-de-investigacao-de-ocorrencias",
+  "outputDirectory": "public",
+  "cleanUrls": false,
+  "rewrites": [
+    { "source": "/mobile", "destination": "/app.html" }
+  ]
+}
